@@ -1,0 +1,21 @@
+version: 3
+workdir: .
+
+allow:
+  depOnAnyVendor: true
+  deepScan: true
+  ignoreNotFoundComponents: true
+
+excludeFiles:
+  - "^.*_test\\.go$"
+
+components:
+  hopper:
+    in:
+      - .
+      - "**"
+
+deps:
+  hopper:
+    anyProjectDeps: true
+    anyVendorDeps: true

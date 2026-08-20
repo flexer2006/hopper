@@ -1,24 +1,15 @@
+.idea/
 bin/
-*.exe
-*.exe~
-*.dll
+vendor/
+profile.cov
+.env
+*config.yml
+coverage.*
+*.coverprofile
 *.so
-*.dylib
 *.test
 *.out
 *.log
-coverage.*
-*.coverprofile
-profile.cov
-content.txt
-vendor/
-go.work
-go.work.sum
-.env
-.idea/
-*.test.exe
-coverage.txt
-/tmp/
-.pgo/
+
 
 

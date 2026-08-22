@@ -1,0 +1,40 @@
+api_token: "REPLACE_ME.32byte-min_Token~Example!"
+mongo_uri: "mongodb://mongo:27017/?replicaSet=rs0"
+amqp_uri: "amqp://hopper:REPLACE_ME.Amqp-Pass~Example!@rabbitmq:5672/"
+
+http_addr: ":9999"
+api_shutdown_timeout: "10s"
+worker_shutdown_timeout: "30s"
+max_request_bytes: 524288
+max_payload_bytes: 262144
+json_max_depth: 64
+rate_limit_rpm: 100
+rate_limit_burst: 20
+trust_xff_hops: 1
+
+worker_id: ""
+prefetch: 1
+http_timeout: "10s"
+max_response_bytes: 1048576
+
+mongo_outcome_timeout: "5s"
+publish_confirm_timeout: "5s"
+claim_lease: "30s"
+
+relay_interval: "2s"
+lease_scan_interval: "5s"
+healing_interval: "30s"
+
+mongo_database: "hopper"
+mongo_jobs_collection: "jobs"
+
+queue_jobs: "jobs"
+queue_dlq: "jobs.dlq"
+exchange_delay: "jobs.delay.dlx"
+
+log_level: "info"
+log_stack_traces: false
+
+retention_enabled: false
+retention_days: 0
+replay_max: 20

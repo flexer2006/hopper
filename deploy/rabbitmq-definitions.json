@@ -1,0 +1,28 @@
+{
+  "users": [
+    {
+      "name": "hopper",
+      "password": "H0p~Xr9qW4!mL2vB8nC6-pT3kQ7",
+      "tags": ["management"]
+    },
+    {
+      "name": "guest",
+      "password": "gUe5t~L0ck0ut!Disabled_k8mN3pQ7-rT2wX9yA.bC4dF6hJ",
+      "tags": []
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "hopper",
+      "vhost": "/",
+      "configure": "^jobs(\\.|$)",
+      "write": "^jobs(\\.|$)",
+      "read": "^jobs(\\.|$)"
+    }
+  ]
+}

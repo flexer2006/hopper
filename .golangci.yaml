@@ -27,7 +27,7 @@ linters:
     - errname
     - errorlint
     - exhaustive
-    - exhaustruct
+    - exhaustruct_v5
     - exptostd
     - fatcontext
     - forbidigo
@@ -116,7 +116,7 @@ linters:
       check-blank: true
     exhaustive:
       default-signifies-exhaustive: true
-    exhaustruct:
+    exhaustruct_v5:
       allow-empty-returns: true
     forbidigo:
       analyze-types: true
@@ -237,7 +237,7 @@ linters:
           - cyclop
           - dupl
           - err113
-          - exhaustruct
+          - exhaustruct_v5
           - forbidigo
           - funlen
           - gochecknoglobals
@@ -270,7 +270,8 @@ formatters:
         - prefix(github.com/flexer2006/hopper)
       custom-order: true
     gofumpt:
-      extra-rules: true
+      extra:
+        group-params: true
       module-path: github.com/flexer2006/hopper
     golines:
       max-len: 120

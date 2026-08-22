@@ -1,0 +1,149 @@
+name: hopper
+
+x-hopper-common: &hopper-common
+  image: hopper:${HOPPER_IMAGE_TAG:-local}
+  restart: unless-stopped
+  user: "65532:65532"
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  pids_limit: 256
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  volumes:
+    - ./hopper.yaml:/etc/hopper/hopper.yaml:ro
+  depends_on:
+    mongo:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+
+x-infra-hardening: &infra-hardening
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  mongo:
+    <<: *infra-hardening
+    image: mongo:7.0.16@sha256:c630c59342c1493d50345136df2af14a76b9e827dd5316bfabee07a0880a5f3a
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - backend
+    mem_limit: 512m
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--eval",
+          "try { const h=db.hello(); if (!h.setName) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}); quit(1) } quit(h.isWritablePrimary ? 0 : 1) } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}); quit(1) }",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    ports:
+      - "127.0.0.1:27017:27017"
+
+  rabbitmq:
+    <<: *infra-hardening
+    image: rabbitmq:4.0.7-management-alpine@sha256:011e8d48c9d4e9e0bc94d709e2b1b68fccf51de6680bcda302566dff0465764f
+    hostname: rabbitmq
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq-definitions.json:/etc/rabbitmq/definitions.json:ro
+    networks:
+      - backend
+    mem_limit: 512m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_port_connectivity",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 25s
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+
+  api:
+    <<: *hopper-common
+    build:
+      context: ..
+      dockerfile: deploy/go.Dockerfile
+      args:
+        GO_VERSION: "1.27"
+    command: ["api"]
+    mem_limit: 128m
+    memswap_limit: 128m
+    environment:
+      HOPPER_CONFIG_FILE: /etc/hopper/hopper.yaml
+      GOMEMLIMIT: 100MiB
+    stop_grace_period: 15s
+    networks:
+      - edge
+      - backend
+
+  worker:
+    <<: *hopper-common
+    command: ["worker"]
+    mem_limit: 256m
+    memswap_limit: 256m
+    environment:
+      HOPPER_CONFIG_FILE: /etc/hopper/hopper.yaml
+      GOMEMLIMIT: 205MiB
+    stop_grace_period: 35s
+    networks:
+      - backend
+
+  nginx:
+    <<: *infra-hardening
+    image: nginxinc/nginx-unprivileged:1.27.4-alpine@sha256:62a904036bfc0e4a4f2b556e34cbf17bc136b47fde8cdb4628762725f48c5782
+    user: "101:101"
+    depends_on:
+      api:
+        condition: service_started
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - edge
+    mem_limit: 64m
+    pids_limit: 128
+    ports:
+      - "127.0.0.1:8080:8080"
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+
+networks:
+  edge:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
+
+volumes:
+  mongo_data:
+  rabbitmq_data:

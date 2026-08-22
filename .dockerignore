@@ -1,0 +1,16 @@
+.git
+.idea
+*.md
+deploy
+.env
+.env.*
+bin
+vendor
+coverage.*
+*.coverprofile
+*.out
+*.test
+*.log
+logo.png
+.golangci.yaml
+.go-arch-lint.yaml

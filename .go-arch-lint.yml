@@ -1,0 +1,243 @@
+version: 3
+workdir: .
+
+allow:
+  depOnAnyVendor: false
+  deepScan: true
+  ignoreNotFoundComponents: false
+
+excludeFiles:
+  - "^.*_test\\.go$"
+
+vendors:
+  chi:
+    in:
+      - github.com/go-chi/chi/v5
+      - github.com/go-chi/chi/v5/**
+  fx:
+    in:
+      - go.uber.org/fx
+      - go.uber.org/fx/**
+      - go.uber.org/dig
+      - go.uber.org/dig/**
+  config:
+    in:
+      - go.uber.org/config
+      - go.uber.org/config/**
+  zap:
+    in:
+      - go.uber.org/zap
+      - go.uber.org/zap/**
+  mongo:
+    in:
+      - go.mongodb.org/mongo-driver/v2
+      - go.mongodb.org/mongo-driver/v2/**
+  amqp:
+    in:
+      - github.com/rabbitmq/amqp091-go
+      - github.com/rabbitmq/amqp091-go/**
+  errgroup:
+    in:
+      - golang.org/x/sync
+      - golang.org/x/sync/**
+  xsys:
+    in:
+      - golang.org/x/sys
+      - golang.org/x/sys/**
+
+components:
+  domain:
+    in:
+      - internal/domain
+      - internal/domain/**
+  enqueue:
+    in:
+      - internal/enqueue
+      - internal/enqueue/**
+  query:
+    in:
+      - internal/query
+      - internal/query/**
+  replay:
+    in:
+      - internal/replay
+      - internal/replay/**
+  deliver:
+    in:
+      - internal/deliver
+      - internal/deliver/**
+  dispatch:
+    in:
+      - internal/dispatch
+      - internal/dispatch/**
+  httpapi:
+    in:
+      - internal/httpapi
+      - internal/httpapi/**
+  worker:
+    in:
+      - internal/worker
+      - internal/worker/**
+  persist:
+    in:
+      - internal/persist
+      - internal/persist/**
+  broker:
+    in:
+      - internal/broker
+      - internal/broker/**
+  egress:
+    in:
+      - internal/egress
+      - internal/egress/**
+  platform:
+    in:
+      - internal/platform
+      - internal/platform/**
+  fxboot:
+    in:
+      - internal/fxboot
+      - internal/fxboot/**
+  fxapi:
+    in:
+      - internal/fxapi
+      - internal/fxapi/**
+  fxworker:
+    in:
+      - internal/fxworker
+      - internal/fxworker/**
+  cmd:
+    in:
+      - cmd/hopper
+      - cmd/hopper/**
+
+commonComponents:
+  - domain
+
+deps:
+  platform:
+    mayDependOn: []
+    canUse:
+      - config
+      - zap
+
+  enqueue:
+    mayDependOn:
+      - platform
+      - dispatch
+    canUse:
+      - zap
+
+  query:
+    mayDependOn:
+      - platform
+    canUse:
+      - zap
+
+  replay:
+    mayDependOn:
+      - platform
+      - dispatch
+    canUse:
+      - zap
+
+  deliver:
+    mayDependOn:
+      - platform
+      - dispatch
+      - egress
+    canUse:
+      - zap
+
+  dispatch:
+    mayDependOn:
+      - platform
+    canUse:
+      - zap
+      - errgroup
+
+  httpapi:
+    mayDependOn:
+      - platform
+      - enqueue
+      - query
+      - replay
+    canUse:
+      - chi
+      - zap
+
+  worker:
+    mayDependOn:
+      - platform
+      - deliver
+      - dispatch
+    canUse:
+      - zap
+      - errgroup
+
+  persist:
+    mayDependOn:
+      - enqueue
+      - query
+      - replay
+      - deliver
+      - dispatch
+    canUse:
+      - mongo
+      - zap
+
+  broker:
+    mayDependOn:
+      - dispatch
+    canUse:
+      - amqp
+      - zap
+
+  egress:
+    mayDependOn:
+      - deliver
+    canUse: []
+
+  fxboot:
+    mayDependOn:
+      - platform
+    canUse:
+      - fx
+
+  fxapi:
+    mayDependOn:
+      - fxboot
+      - platform
+      - httpapi
+      - enqueue
+      - query
+      - replay
+      - dispatch
+      - persist
+      - broker
+    canUse:
+      - fx
+      - zap
+      - config
+
+  fxworker:
+    mayDependOn:
+      - fxboot
+      - platform
+      - worker
+      - deliver
+      - dispatch
+      - persist
+      - broker
+      - egress
+    canUse:
+      - fx
+      - zap
+      - config
+
+  cmd:
+    mayDependOn:
+      - fxapi
+      - fxworker
+      - platform
+    canUse: []

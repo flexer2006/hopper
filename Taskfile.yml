@@ -1,0 +1,31 @@
+version: '3'
+
+vars:
+  TIMEOUT: 5m
+  TEST_FLAGS: -race -count=1 -shuffle=on -covermode=atomic
+
+tasks:
+  chup:
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+      - go mod verify
+      - go vet ./...
+      - go fix ./...
+      - golangci-lint run --timeout={{.TIMEOUT}} ./...
+      - go-arch-lint check
+
+  test:
+    silent: true
+    cmds:
+      - |
+        set -o pipefail
+        go test ./... {{.TEST_FLAGS}} -timeout={{.TIMEOUT}} -coverprofile=coverage.out 2>&1 \
+          | awk '/^ok |^FAIL / {
+              pkg = $2; sub(/.*\//, "", pkg)
+              pct = match($0, /coverage: [0-9.]+%/) ? substr($0, RSTART + 10, RLENGTH - 10) : "  —"
+              printf "  %5s  %s\n", pct, pkg
+            }'
+        go tool cover -func=coverage.out \
+          | awk '/^total:/ { printf "  ----\n  %5s  total\n", $3; exit }'
+        go clean -testcache

@@ -3,6 +3,7 @@ module github.com/flexer2006/hopper
 go 1.27
 
 require (
+	github.com/rabbitmq/amqp091-go v1.14.0
 	go.mongodb.org/mongo-driver/v2 v2.8.1
 	go.uber.org/config v1.4.1
 	go.uber.org/fx v1.24.0

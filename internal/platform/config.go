@@ -13,8 +13,12 @@ type Config struct {
 	LogLevel                  string        `yaml:"log_level"`
 	APIShutdownTimeoutYAML    string        `yaml:"api_shutdown_timeout"`
 	WorkerShutdownTimeoutYAML string        `yaml:"worker_shutdown_timeout"`
+	RelayIntervalYAML         string        `yaml:"relay_interval"`
+	HealingIntervalYAML       string        `yaml:"healing_interval"`
 	APIShutdownTimeout        time.Duration `yaml:"-"`
 	WorkerShutdownTimeout     time.Duration `yaml:"-"`
+	RelayInterval             time.Duration `yaml:"-"`
+	HealingInterval           time.Duration `yaml:"-"`
 	LogStackTraces            bool          `yaml:"log_stack_traces"`
 }
 
@@ -23,9 +27,13 @@ const (
 	APITokenEnv                  = "HOPPER_API_TOKEN"
 	APIShutdownTimeoutEnv        = "HOPPER_API_SHUTDOWN_TIMEOUT"
 	WorkerShutdownTimeoutEnv     = "HOPPER_WORKER_SHUTDOWN_TIMEOUT"
+	RelayIntervalEnv             = "HOPPER_RELAY_INTERVAL"
+	HealingIntervalEnv           = "HOPPER_HEALING_INTERVAL"
 	MinAPITokenBytes             = 32
 	DefaultAPIShutdownTimeout    = 10 * time.Second
 	DefaultWorkerShutdownTimeout = 30 * time.Second
+	DefaultRelayInterval         = 2 * time.Second
+	DefaultHealingInterval       = 30 * time.Second
 )
 
 func Load() (Config, error) {
@@ -90,6 +98,29 @@ func (cfg *Config) applyTimeouts() error {
 
 	cfg.APIShutdownTimeout = apiTimeout
 	cfg.WorkerShutdownTimeout = workerTimeout
+
+	relay, relayErr := resolveDuration(
+		cfg.RelayIntervalYAML,
+		"relay_interval",
+		RelayIntervalEnv,
+		DefaultRelayInterval,
+	)
+	if relayErr != nil {
+		return relayErr
+	}
+
+	healing, healingErr := resolveDuration(
+		cfg.HealingIntervalYAML,
+		"healing_interval",
+		HealingIntervalEnv,
+		DefaultHealingInterval,
+	)
+	if healingErr != nil {
+		return healingErr
+	}
+
+	cfg.RelayInterval = relay
+	cfg.HealingInterval = healing
 
 	return nil
 }

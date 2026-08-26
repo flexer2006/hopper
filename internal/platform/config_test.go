@@ -121,6 +121,14 @@ func TestLoadEnvOverlay(t *testing.T) {
 	if cfg.WorkerShutdownTimeout != platform.DefaultWorkerShutdownTimeout {
 		t.Fatalf("WorkerShutdownTimeout = %s", cfg.WorkerShutdownTimeout)
 	}
+
+	if cfg.RelayInterval != platform.DefaultRelayInterval {
+		t.Fatalf("RelayInterval = %s", cfg.RelayInterval)
+	}
+
+	if cfg.HealingInterval != platform.DefaultHealingInterval {
+		t.Fatalf("HealingInterval = %s", cfg.HealingInterval)
+	}
 }
 
 func TestLoadMissingPath(t *testing.T) {
@@ -204,6 +212,35 @@ func TestLoadTimeoutEnvOverlay(t *testing.T) {
 
 	if cfg.WorkerShutdownTimeout != 4*time.Second {
 		t.Fatalf("WorkerShutdownTimeout = %s, want 4s", cfg.WorkerShutdownTimeout)
+	}
+}
+
+func TestLoadRelayIntervalEnvOverlay(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) +
+		"relay_interval: 3s\nhealing_interval: 45s\n"
+
+	writeErr := os.WriteFile(path, []byte(body), 0o600)
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+
+	t.Setenv(platform.ConfigFileEnv, path)
+	t.Setenv(platform.RelayIntervalEnv, "1s")
+	t.Setenv(platform.HealingIntervalEnv, "9s")
+
+	cfg, err := platform.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.RelayInterval != time.Second {
+		t.Fatalf("RelayInterval = %s, want 1s", cfg.RelayInterval)
+	}
+
+	if cfg.HealingInterval != 9*time.Second {
+		t.Fatalf("HealingInterval = %s, want 9s", cfg.HealingInterval)
 	}
 }
 

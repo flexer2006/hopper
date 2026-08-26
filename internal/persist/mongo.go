@@ -164,3 +164,43 @@ func (c *mongoColl) queuedSkip(ctx context.Context, id string) error {
 
 	return err
 }
+
+func (c *mongoColl) listPending(ctx context.Context, limit int) ([]jobDoc, error) {
+	return c.findList(ctx, PendingFilter(), limit)
+}
+
+func (c *mongoColl) listDueHealing(ctx context.Context, age time.Duration, limit int) ([]jobDoc, error) {
+	return c.findList(ctx, HealingFilter(age.Milliseconds()), limit)
+}
+
+func (c *mongoColl) promoteDueRetry(ctx context.Context, id string, generation int) (jobDoc, error) {
+	return c.findAndUpdate(ctx, PromoteDueRetryFilter(id, generation), EnqueuePendingPipeline())
+}
+
+func (c *mongoColl) startHealing(ctx context.Context, id string, generation int, age time.Duration) (jobDoc, error) {
+	return c.findAndUpdate(
+		ctx,
+		HealPublishedFilter(id, generation, age.Milliseconds()),
+		EnqueuePendingPipeline(),
+	)
+}
+
+func (c *mongoColl) findList(ctx context.Context, filter bson.D, limit int) ([]jobDoc, error) {
+	opts := options.Find().SetLimit(int64(limit))
+
+	cur, err := c.coll.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, MapDriverError("find", err)
+	}
+
+	defer cur.Close(ctx)
+
+	docs := make([]jobDoc, 0)
+
+	err = cur.All(ctx, &docs)
+	if err != nil {
+		return nil, MapDriverError("find all", err)
+	}
+
+	return docs, nil
+}

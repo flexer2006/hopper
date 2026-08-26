@@ -1,6 +1,10 @@
 package persist
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/flexer2006/hopper/internal/dispatch"
+)
 
 var (
 	ErrNotFound        = errors.New("job not found")
@@ -9,7 +13,7 @@ var (
 	ErrInvalidStatus   = errors.New("invalid outcome status")
 	ErrStandalone      = errors.New("mongodb replica set required")
 	ErrStaleFence      = errors.New("stale fence token")
-	ErrStaleGeneration = errors.New("stale dispatch generation")
+	ErrStaleGeneration = dispatch.ErrStaleGeneration
 	ErrNotDue          = errors.New("job not_before is future")
 	ErrLeaseHeld       = errors.New("job running with unexpired lease")
 	ErrTerminal        = errors.New("job is terminal")

@@ -174,6 +174,31 @@ func TestLeaseAndNotDueFiltersUseNOW(t *testing.T) {
 	if !strings.Contains(notDue, "$$NOW") {
 		t.Fatalf("NotDueFilter = %s", notDue)
 	}
+
+	heal := extJSON(t, persist.HealingFilter(30000))
+	if !strings.Contains(heal, "$$NOW") || !strings.Contains(heal, "published") {
+		t.Fatalf("HealingFilter = %s", heal)
+	}
+
+	promote := extJSON(t, persist.PromoteDueRetryFilter(testJobID, 2))
+	if !strings.Contains(promote, "retry") || !strings.Contains(promote, "pending") {
+		t.Fatalf("PromoteDueRetryFilter = %s", promote)
+	}
+
+	pending := extJSON(t, persist.PendingFilter())
+	if !strings.Contains(pending, "pending") {
+		t.Fatalf("PendingFilter = %s", pending)
+	}
+
+	healID := extJSON(t, persist.HealPublishedFilter(testJobID, 4, 30000))
+	if !strings.Contains(healID, testJobID) || !strings.Contains(healID, "dispatch.generation") {
+		t.Fatalf("HealPublishedFilter = %s", healID)
+	}
+
+	enq := pipelineJSON(t, persist.EnqueuePendingPipeline())
+	if !strings.Contains(enq, "$$NOW") || !strings.Contains(enq, "enqueue") {
+		t.Fatalf("EnqueuePendingPipeline = %s", enq)
+	}
 }
 
 func TestOutcomeAndCapPipelines(t *testing.T) {
@@ -235,7 +260,7 @@ func TestIndexModelsUniqueAndPartial(t *testing.T) {
 	t.Parallel()
 
 	models := persist.IndexModels()
-	if len(models) != 4 {
+	if len(models) != 5 {
 		t.Fatalf("IndexModels() len = %d", len(models))
 	}
 

@@ -10,7 +10,7 @@ import (
 
 func dueClause() bson.D {
 	return bson.D{{Key: "$or", Value: bson.A{
-		bson.D{{Key: fNotBefore, Value: bson.D{{Key: "$exists", Value: false}}}},
+		bson.D{{Key: fNotBefore, Value: bson.D{{Key: opExists, Value: false}}}},
 		bson.D{{Key: opExpr, Value: bson.D{{Key: "$lte", Value: bson.A{"$not_before", serverNow}}}}},
 	}}}
 }
@@ -33,7 +33,7 @@ func ClaimDueFilter(id string) bson.D {
 	return bson.D{
 		{Key: fID, Value: id},
 		{Key: fStatus, Value: string(domain.StatusQueued)},
-		{Key: "$and", Value: bson.A{dueClause(), startCapExpr(true)}},
+		{Key: opAnd, Value: bson.A{dueClause(), startCapExpr(true)}},
 	}
 }
 
@@ -41,7 +41,7 @@ func CapDeadFilter(id string) bson.D {
 	return bson.D{
 		{Key: fID, Value: id},
 		{Key: fStatus, Value: string(domain.StatusQueued)},
-		{Key: "$and", Value: bson.A{dueClause(), startCapExpr(false)}},
+		{Key: opAnd, Value: bson.A{dueClause(), startCapExpr(false)}},
 	}
 }
 
@@ -101,6 +101,47 @@ func ReplayFilter(id string) bson.D {
 	}
 }
 
+func PendingFilter() bson.D {
+	return bson.D{{Key: fDispatchStatus, Value: dispatchPending}}
+}
+
+func healingAgeClause(ageMs int64) bson.D {
+	return bson.D{{Key: "$or", Value: bson.A{
+		bson.D{{Key: fPublishedAt, Value: bson.D{{Key: opExists, Value: false}}}},
+		bson.D{{Key: opExpr, Value: bson.D{{Key: "$lte", Value: bson.A{
+			bson.D{{Key: opAdd, Value: bson.A{"$" + fPublishedAt, ageMs}}},
+			serverNow,
+		}}}}},
+	}}}
+}
+
+func HealingFilter(ageMs int64) bson.D {
+	return bson.D{
+		{Key: fStatus, Value: string(domain.StatusQueued)},
+		{Key: fDispatchStatus, Value: dispatchPublished},
+		{Key: opAnd, Value: bson.A{dueClause(), healingAgeClause(ageMs)}},
+	}
+}
+
+func PromoteDueRetryFilter(id string, generation int) bson.D {
+	return bson.D{
+		{Key: fID, Value: id},
+		{Key: fStatus, Value: string(domain.StatusQueued)},
+		{Key: fDispatchGen, Value: generation},
+		{Key: fDispatchStatus, Value: dispatchPending},
+		{Key: fDispatchIntent, Value: intentRetry},
+		{Key: opAnd, Value: bson.A{dueClause()}},
+	}
+}
+
+func HealPublishedFilter(id string, generation int, ageMs int64) bson.D {
+	return bson.D{
+		{Key: fID, Value: id},
+		{Key: fDispatchGen, Value: generation},
+		{Key: opAnd, Value: bson.A{HealingFilter(ageMs)}},
+	}
+}
+
 func LeaseHeldFilter(id string) bson.D {
 	return bson.D{
 		{Key: fID, Value: id},
@@ -113,7 +154,7 @@ func NotDueFilter(id string) bson.D {
 	return bson.D{
 		{Key: fID, Value: id},
 		{Key: fStatus, Value: string(domain.StatusQueued)},
-		{Key: fNotBefore, Value: bson.D{{Key: "$exists", Value: true}}},
+		{Key: fNotBefore, Value: bson.D{{Key: opExists, Value: true}}},
 		{Key: opExpr, Value: bson.D{{Key: "$gt", Value: bson.A{"$not_before", serverNow}}}},
 	}
 }
@@ -137,6 +178,10 @@ func IndexModels() []mongo.IndexModel {
 		{
 			Keys:    bson.D{{Key: fStatus, Value: 1}, {Key: fClaimExpiresAt, Value: 1}},
 			Options: options.Index().SetName("status_claim_expires_at"),
+		},
+		{
+			Keys:    bson.D{{Key: fStatus, Value: 1}, {Key: fNotBefore, Value: 1}},
+			Options: options.Index().SetName("status_not_before"),
 		},
 	}
 }

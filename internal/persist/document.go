@@ -7,6 +7,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/domain"
 	"github.com/flexer2006/hopper/internal/enqueue"
 	"github.com/flexer2006/hopper/internal/query"
@@ -165,6 +166,16 @@ func (d *jobDoc) existing() enqueue.Existing {
 		ID:             d.ID,
 		RequestHash:    d.RequestHash,
 		DispatchStatus: d.Dispatch.Status,
+	}
+}
+
+func (d *jobDoc) intent(now time.Time) dispatch.Intent {
+	return dispatch.Intent{
+		ID:         d.ID,
+		Queue:      d.Dispatch.Queue,
+		Kind:       d.Dispatch.Intent,
+		Generation: d.Dispatch.Generation,
+		Due:        isDue(d, now),
 	}
 }
 

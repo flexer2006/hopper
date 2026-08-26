@@ -128,7 +128,7 @@ func applyOutcome(doc *jobDoc, now time.Time, in deliver.OutcomeIn) {
 	rotateDispatch(doc, next)
 }
 
-func applyLeaseRecover(doc *jobDoc, now time.Time) {
+func applyEnqueuePending(doc *jobDoc, now time.Time) {
 	next := dispatchDoc{
 		CreatedAt:   now,
 		PublishedAt: nil,
@@ -141,12 +141,32 @@ func applyLeaseRecover(doc *jobDoc, now time.Time) {
 		Attempt:     0,
 	}
 	rotateDispatch(doc, next)
+	doc.NotBefore = nil
+	doc.UpdatedAt = now
+}
+
+func applyLeaseRecover(doc *jobDoc, now time.Time) {
+	applyEnqueuePending(doc, now)
 	doc.Status = string(domain.StatusQueued)
 	doc.FenceToken = ""
 	doc.ClaimedBy = ""
 	doc.ClaimExpiresAt = nil
-	doc.NotBefore = nil
-	doc.UpdatedAt = now
+}
+
+func healingEligible(doc *jobDoc, now time.Time, age time.Duration) bool {
+	if doc.Status != string(domain.StatusQueued) || !isDue(doc, now) {
+		return false
+	}
+
+	if doc.Dispatch.Status != dispatchPublished {
+		return false
+	}
+
+	if doc.Dispatch.PublishedAt == nil {
+		return true
+	}
+
+	return !doc.Dispatch.PublishedAt.After(now.Add(-age))
 }
 
 func applyReplay(doc *jobDoc, now time.Time, by string) {

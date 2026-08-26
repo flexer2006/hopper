@@ -2,6 +2,7 @@ package persist
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -199,4 +200,97 @@ func (m *mem) skipReason(_ context.Context, id string) error {
 	}
 
 	return classifySkip(&doc, m.now().UTC())
+}
+
+func (m *mem) listPending(_ context.Context, limit int) ([]jobDoc, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	out := make([]jobDoc, 0)
+
+	for i := range m.docs {
+		doc := m.docs[i]
+		if doc.Dispatch.Status == dispatchPending {
+			out = append(out, doc)
+		}
+	}
+
+	return capSorted(out, limit), nil
+}
+
+func (m *mem) listDueHealing(_ context.Context, age time.Duration, limit int) ([]jobDoc, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := m.now().UTC()
+	out := make([]jobDoc, 0)
+
+	for i := range m.docs {
+		doc := m.docs[i]
+		if healingEligible(&doc, now, age) {
+			out = append(out, doc)
+		}
+	}
+
+	return capSorted(out, limit), nil
+}
+
+func (m *mem) promoteDueRetry(_ context.Context, id string, generation int) (jobDoc, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	doc, ok := m.docs[id]
+	if !ok {
+		return jobDoc{}, ErrNotFound
+	}
+
+	now := m.now().UTC()
+	if !dueRetryPending(&doc, now, generation) {
+		return jobDoc{}, ErrNotFound
+	}
+
+	applyEnqueuePending(&doc, now)
+	m.docs[id] = doc
+
+	return doc, nil
+}
+
+func (m *mem) startHealing(_ context.Context, id string, generation int, age time.Duration) (jobDoc, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	doc, ok := m.docs[id]
+	if !ok {
+		return jobDoc{}, ErrNotFound
+	}
+
+	now := m.now().UTC()
+	if doc.Dispatch.Generation != generation || !healingEligible(&doc, now, age) {
+		return jobDoc{}, ErrNotFound
+	}
+
+	applyEnqueuePending(&doc, now)
+	m.docs[id] = doc
+
+	return doc, nil
+}
+
+func dueRetryPending(doc *jobDoc, now time.Time, generation int) bool {
+	return doc.Status == string(domain.StatusQueued) &&
+		doc.Dispatch.Generation == generation &&
+		doc.Dispatch.Status == dispatchPending &&
+		doc.Dispatch.Intent == intentRetry &&
+		isDue(doc, now)
+}
+
+func capSorted(docs []jobDoc, limit int) []jobDoc {
+	sort.Slice(docs, func(i, j int) bool {
+		return docs[i].ID < docs[j].ID
+	})
+
+	if limit > 0 && len(docs) > limit {
+		return docs[:limit]
+	}
+
+	return docs
 }

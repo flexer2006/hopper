@@ -16,7 +16,7 @@ import (
 	"github.com/flexer2006/hopper/internal/replay"
 )
 
-type collection interface {
+type collection interface { //nolint:interfacebloat // persist test double mirrors mongoColl.
 	insert(ctx context.Context, doc *jobDoc) error
 	byID(ctx context.Context, id string) (jobDoc, error)
 	byProducerKey(ctx context.Context, key string) (jobDoc, error)
@@ -27,6 +27,10 @@ type collection interface {
 	recoverLease(ctx context.Context, id string) (jobDoc, error)
 	replay(ctx context.Context, id, by string) (jobDoc, error)
 	skipReason(ctx context.Context, id string) error
+	listPending(ctx context.Context, limit int) ([]jobDoc, error)
+	listDueHealing(ctx context.Context, age time.Duration, limit int) ([]jobDoc, error)
+	promoteDueRetry(ctx context.Context, id string, generation int) (jobDoc, error)
+	startHealing(ctx context.Context, id string, generation int, age time.Duration) (jobDoc, error)
 }
 
 type closer interface {
@@ -132,6 +136,9 @@ func (s *Store) CommitOutcome(ctx context.Context, in deliver.OutcomeIn) error {
 
 func (s *Store) MarkPublished(ctx context.Context, id string, generation int) error {
 	_, err := s.coll.markPublished(ctx, id, generation)
+	if errors.Is(err, ErrNotFound) {
+		return dispatch.ErrNotFound
+	}
 
 	return err
 }

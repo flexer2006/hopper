@@ -22,6 +22,8 @@ const (
 	replayHistoryCap   = 20
 	msPerSecond        = 1000
 	firstGeneration    = 1
+	defaultScanLimit   = 64
+	maxScanLimit       = 256
 	serverNow          = "$$NOW"
 	fID                = "_id"
 	fStatus            = "status"
@@ -32,6 +34,9 @@ const (
 	fDispatchStatus    = "dispatch.status"
 	fDispatchHistory   = "dispatch_history"
 	fDispatch          = "dispatch"
+	fDispatchGen       = "dispatch.generation"
+	fDispatchIntent    = "dispatch.intent"
+	fPublishedAt       = "dispatch.published_at"
 	fCycle             = "cycle"
 	fAttempts          = "attempts"
 	pathCycle          = "$cycle"
@@ -41,6 +46,8 @@ const (
 	opSet              = "$set"
 	opUnset            = "$unset"
 	opLt               = "$lt"
+	opAnd              = "$and"
+	opExists           = "$exists"
 	opConcatArrays     = "$concatArrays"
 	opIfNull           = "$ifNull"
 )

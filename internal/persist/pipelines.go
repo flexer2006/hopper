@@ -53,6 +53,17 @@ func CapDeadPipeline() mongo.Pipeline {
 	}
 }
 
+func EnqueuePendingPipeline() mongo.Pipeline {
+	return mongo.Pipeline{
+		bson.D{{Key: opSet, Value: bson.D{
+			{Key: fUpdatedAt, Value: serverNow},
+			{Key: fDispatchHistory, Value: historyConcat()},
+			{Key: fDispatch, Value: pendingDispatch(intentEnqueue, queueJobs, pathCycle)},
+		}}},
+		bson.D{{Key: opUnset, Value: bson.A{fNotBefore}}},
+	}
+}
+
 func LeaseRecoverPipeline() mongo.Pipeline {
 	return mongo.Pipeline{
 		bson.D{{Key: opSet, Value: bson.D{

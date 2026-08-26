@@ -208,7 +208,7 @@ func TestRelayDueRetryPromotesToJobs(t *testing.T) {
 	}
 }
 
-func TestRelayFutureRetryPublishesDelayQueue(t *testing.T) {
+func TestRelayFutureRetryDoesNotPublishDelayQueue(t *testing.T) {
 	t.Parallel()
 
 	st := persist.NewMemory(newClock().now, 30*time.Second)
@@ -243,8 +243,8 @@ func TestRelayFutureRetryPublishesDelayQueue(t *testing.T) {
 	}
 
 	hit := pub.last()
-	if hit.n != 1 || hit.queue != "jobs.delay.1s" {
-		t.Fatalf("delay queue = %s n=%d", hit.queue, hit.n)
+	if hit.n != 0 {
+		t.Fatalf("not-due retry published queue=%s n=%d", hit.queue, hit.n)
 	}
 }
 
@@ -388,7 +388,10 @@ func TestRelayStartStopNoLeak(t *testing.T) {
 	st := persist.NewMemory(newClock().now, 30*time.Second)
 	rel := newRelay(t, st, new(recPub))
 	stop := rel.Start(t.Context())
-	stop()
+	err := stop(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRelayPublishImmediate(t *testing.T) {
@@ -408,7 +411,6 @@ func TestRelayPublishImmediate(t *testing.T) {
 		Queue:      "jobs",
 		Kind:       dispatch.IntentEnqueue,
 		Generation: 1,
-		Due:        true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -426,5 +428,88 @@ func TestNewRelayDefaults(t *testing.T) {
 	rel := dispatch.NewRelay(persist.NewMemory(newClock().now, time.Second), new(recPub), dispatch.Config{}, nil)
 	if rel == nil {
 		t.Fatal("NewRelay nil")
+	}
+}
+
+func TestRelayTickSkipsNotDueRetry(t *testing.T) {
+	t.Parallel()
+
+	clk := newClock()
+	st := persist.NewMemory(clk.now, 30*time.Second)
+	err := st.Insert(t.Context(), testRecord())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claimed, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		ID:           testJobID,
+		FenceToken:   claimed.FenceToken,
+		Queue:        "jobs.delay.60s",
+		Status:       domain.StatusQueued,
+		DelaySeconds: 60,
+		AttemptsDone: 1,
+		Cycle:        claimed.Cycle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pub := new(recPub)
+	rel := newRelay(t, st, pub)
+	err = rel.Tick(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if pub.last().n != 0 {
+		t.Fatalf("not-due retry published = %+v", pub.last())
+	}
+}
+
+func TestRelayTickPromotesDueRetry(t *testing.T) {
+	t.Parallel()
+
+	clk := newClock()
+	st := persist.NewMemory(clk.now, 30*time.Second)
+	err := st.Insert(t.Context(), testRecord())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claimed, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		ID:           testJobID,
+		FenceToken:   claimed.FenceToken,
+		Queue:        "jobs.delay.1s",
+		Status:       domain.StatusQueued,
+		DelaySeconds: 1,
+		AttemptsDone: 1,
+		Cycle:        claimed.Cycle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clk.add(2 * time.Second)
+
+	pub := new(recPub)
+	rel := newRelay(t, st, pub)
+	err = rel.Tick(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hit := pub.last()
+	if hit.n != 1 || hit.queue != "jobs" {
+		t.Fatalf("due retry publish = %+v", hit)
 	}
 }

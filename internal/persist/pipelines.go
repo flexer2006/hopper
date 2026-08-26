@@ -5,6 +5,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/flexer2006/hopper/internal/deliver"
+	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/domain"
 )
 
@@ -30,7 +31,7 @@ func pendingDispatch(intent, queue string, cycle any) bson.D {
 		{Key: "generation", Value: bson.D{{Key: opAdd, Value: bson.A{"$dispatch.generation", 1}}}},
 		{Key: "intent", Value: intent},
 		{Key: "queue", Value: queue},
-		{Key: fStatus, Value: dispatchPending},
+		{Key: fStatus, Value: dispatch.StatusPending},
 		{Key: "created_at", Value: serverNow},
 		{Key: fCycle, Value: cycle},
 	}
@@ -46,7 +47,7 @@ func CapDeadPipeline() mongo.Pipeline {
 			{Key: fStatus, Value: string(domain.StatusDead)},
 			{Key: fUpdatedAt, Value: serverNow},
 			{Key: fDispatchHistory, Value: historyConcat()},
-			{Key: fDispatch, Value: pendingDispatch(intentDLQ, domain.QueueDLQ, pathCycle)},
+			{Key: fDispatch, Value: pendingDispatch(dispatch.IntentDLQ, domain.QueueDLQ, pathCycle)},
 		}}},
 		unsetFence(),
 		bson.D{{Key: opUnset, Value: bson.A{fNotBefore}}},
@@ -58,7 +59,7 @@ func EnqueuePendingPipeline() mongo.Pipeline {
 		bson.D{{Key: opSet, Value: bson.D{
 			{Key: fUpdatedAt, Value: serverNow},
 			{Key: fDispatchHistory, Value: historyConcat()},
-			{Key: fDispatch, Value: pendingDispatch(intentEnqueue, queueJobs, pathCycle)},
+			{Key: fDispatch, Value: pendingDispatch(dispatch.IntentEnqueue, domain.QueueJobs, pathCycle)},
 		}}},
 		bson.D{{Key: opUnset, Value: bson.A{fNotBefore}}},
 	}
@@ -70,7 +71,7 @@ func LeaseRecoverPipeline() mongo.Pipeline {
 			{Key: fStatus, Value: string(domain.StatusQueued)},
 			{Key: fUpdatedAt, Value: serverNow},
 			{Key: fDispatchHistory, Value: historyConcat()},
-			{Key: fDispatch, Value: pendingDispatch(intentEnqueue, queueJobs, pathCycle)},
+			{Key: fDispatch, Value: pendingDispatch(dispatch.IntentEnqueue, domain.QueueJobs, pathCycle)},
 		}}},
 		unsetFence(),
 		bson.D{{Key: opUnset, Value: bson.A{fNotBefore}}},
@@ -102,8 +103,8 @@ func ReplayPipeline(by string) mongo.Pipeline {
 			}}}},
 			{Key: fDispatchHistory, Value: historyConcat()},
 			{Key: fDispatch, Value: pendingDispatch(
-				intentEnqueue,
-				queueJobs,
+				dispatch.IntentEnqueue,
+				domain.QueueJobs,
 				bson.D{{Key: opAdd, Value: bson.A{pathCycle, 1}}},
 			)},
 		}}},
@@ -134,16 +135,16 @@ func OutcomePipeline(in deliver.OutcomeIn) mongo.Pipeline {
 
 //nolint:gocritic // hugeParam: matches deliver.OutcomeIn
 func retryOutcomeStages(in deliver.OutcomeIn) mongo.Pipeline {
-	intent := intentRetry
+	intent := dispatch.IntentRetry
 	queue := in.Queue
 
 	if in.Status == domain.StatusDead {
-		intent = intentDLQ
+		intent = dispatch.IntentDLQ
 		queue = domain.QueueDLQ
 	}
 
 	if queue == "" {
-		queue = queueJobs
+		queue = domain.QueueJobs
 	}
 
 	dispatchSet := pendingDispatch(intent, queue, pathCycle)

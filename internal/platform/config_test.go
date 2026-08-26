@@ -129,6 +129,22 @@ func TestLoadEnvOverlay(t *testing.T) {
 	if cfg.HealingInterval != platform.DefaultHealingInterval {
 		t.Fatalf("HealingInterval = %s", cfg.HealingInterval)
 	}
+
+	if cfg.LeaseScanInterval != platform.DefaultLeaseScanInterval {
+		t.Fatalf("LeaseScanInterval = %s", cfg.LeaseScanInterval)
+	}
+
+	if cfg.HTTPAddr != platform.DefaultHTTPAddr {
+		t.Fatalf("HTTPAddr = %q", cfg.HTTPAddr)
+	}
+
+	if cfg.MaxRequestBytes != platform.DefaultMaxRequestBytes || cfg.JSONMaxDepth != platform.DefaultJSONMaxDepth {
+		t.Fatalf("http limits request=%d depth=%d", cfg.MaxRequestBytes, cfg.JSONMaxDepth)
+	}
+
+	if cfg.RateLimitRPM != platform.DefaultRateLimitRPM || cfg.TrustXFFHops != 0 {
+		t.Fatalf("rate rpm=%d xff=%d", cfg.RateLimitRPM, cfg.TrustXFFHops)
+	}
 }
 
 func TestLoadMissingPath(t *testing.T) {
@@ -219,7 +235,7 @@ func TestLoadRelayIntervalEnvOverlay(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "hopper.yaml")
 	body := platform.MinimalYAML(platform.ValidToken()) +
-		"relay_interval: 3s\nhealing_interval: 45s\n"
+		"relay_interval: 3s\nhealing_interval: 45s\nlease_scan_interval: 8s\n"
 
 	writeErr := os.WriteFile(path, []byte(body), 0o600)
 	if writeErr != nil {
@@ -229,6 +245,7 @@ func TestLoadRelayIntervalEnvOverlay(t *testing.T) {
 	t.Setenv(platform.ConfigFileEnv, path)
 	t.Setenv(platform.RelayIntervalEnv, "1s")
 	t.Setenv(platform.HealingIntervalEnv, "9s")
+	t.Setenv(platform.LeaseScanIntervalEnv, "2s")
 
 	cfg, err := platform.Load()
 	if err != nil {
@@ -241,6 +258,48 @@ func TestLoadRelayIntervalEnvOverlay(t *testing.T) {
 
 	if cfg.HealingInterval != 9*time.Second {
 		t.Fatalf("HealingInterval = %s, want 9s", cfg.HealingInterval)
+	}
+
+	if cfg.LeaseScanInterval != 2*time.Second {
+		t.Fatalf("LeaseScanInterval = %s, want 2s", cfg.LeaseScanInterval)
+	}
+}
+
+func TestLoadFileLeaseScanIntervalYAML(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) + "lease_scan_interval: 8s\n"
+
+	writeErr := os.WriteFile(path, []byte(body), 0o600)
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+
+	cfg, err := platform.LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.LeaseScanInterval != 8*time.Second {
+		t.Fatalf("LeaseScanInterval = %s, want 8s", cfg.LeaseScanInterval)
+	}
+}
+
+func TestLoadFileRejectsNonPositiveLeaseScan(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) + "lease_scan_interval: 0s\n"
+
+	writeErr := os.WriteFile(path, []byte(body), 0o600)
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+
+	_, err := platform.LoadFile(path)
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("LoadFile() err = %v, want ErrConfig", err)
 	}
 }
 
@@ -258,5 +317,51 @@ func TestLoadFileRejectsNonPositiveTimeout(t *testing.T) {
 	_, err := platform.LoadFile(path)
 	if !errors.Is(err, platform.ErrConfig) {
 		t.Fatalf("LoadFile() err = %v, want ErrConfig", err)
+	}
+}
+
+func TestLoadHTTPAddrEnvOverlay(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+
+	writeErr := os.WriteFile(path, []byte(platform.MinimalYAML(platform.ValidToken())), 0o600)
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+
+	t.Setenv(platform.ConfigFileEnv, path)
+	t.Setenv(platform.HTTPAddrEnv, "127.0.0.1:0")
+	t.Setenv(platform.RateLimitRPMEnv, "50")
+	t.Setenv(platform.TrustXFFHopsEnv, "2")
+
+	cfg, err := platform.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.HTTPAddr != "127.0.0.1:0" {
+		t.Fatalf("HTTPAddr = %q", cfg.HTTPAddr)
+	}
+
+	if cfg.RateLimitRPM != 50 || cfg.TrustXFFHops != 2 {
+		t.Fatalf("rpm=%d hops=%d", cfg.RateLimitRPM, cfg.TrustXFFHops)
+	}
+}
+
+func TestLoadRejectsZeroJSONDepthEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+
+	writeErr := os.WriteFile(path, []byte(platform.MinimalYAML(platform.ValidToken())), 0o600)
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+
+	t.Setenv(platform.ConfigFileEnv, path)
+	t.Setenv(platform.JSONMaxDepthEnv, "0")
+
+	_, err := platform.Load()
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("Load() err = %v, want ErrConfig", err)
 	}
 }

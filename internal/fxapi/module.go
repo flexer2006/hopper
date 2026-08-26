@@ -13,7 +13,12 @@ import (
 func Module() fx.Option { //nolint:ireturn // fx.Option is the composition contract.
 	return fx.Module("api",
 		fx.Provide(platform.NewLogger),
-		fx.Invoke(startRelay),
+		fx.Provide(newRelayHolder),
+		fx.Provide(newEnqueue),
+		fx.Provide(newQuery),
+		fx.Provide(newReplay),
+		fx.Invoke(startHeldRelay),
+		fx.Invoke(startHTTP),
 		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
 			zl := new(fxevent.ZapLogger{Logger: log})
 			zl.UseLogLevel(zapcore.DebugLevel)

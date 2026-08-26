@@ -14,19 +14,34 @@ import (
 type stubJobs struct {
 	pending    []dispatch.Intent
 	healing    []dispatch.Intent
+	expired    []string
+	recovered  []string
 	listErr    error
 	healList   error
+	leaseErr   error
+	recoverErr error
 	promoteErr error
 	healErr    error
 	markErr    error
+	recoverOK  bool
 }
 
 func (s *stubJobs) MarkPublished(context.Context, string, int) error {
 	return s.markErr
 }
 
-func (s *stubJobs) RecoverExpiredLease(context.Context, string) (bool, error) {
-	return false, nil
+func (s *stubJobs) RecoverExpiredLease(_ context.Context, id string) (bool, error) {
+	s.recovered = append(s.recovered, id)
+
+	if s.recoverErr != nil {
+		return false, s.recoverErr
+	}
+
+	return s.recoverOK, nil
+}
+
+func (s *stubJobs) ListExpiredLeases(context.Context, int) ([]string, error) {
+	return s.expired, s.leaseErr
 }
 
 func (s *stubJobs) ListPending(context.Context, int) ([]dispatch.Intent, error) {
@@ -79,7 +94,6 @@ func TestRelayHealErrorPaths(t *testing.T) {
 		Queue:      "jobs",
 		Kind:       dispatch.IntentEnqueue,
 		Generation: 2,
-		Due:        true,
 	}
 
 	rel := dispatch.NewRelay(&stubJobs{
@@ -120,7 +134,6 @@ func TestRelayPromoteAndMarkSkip(t *testing.T) {
 		Queue:      "jobs.delay.1s",
 		Kind:       dispatch.IntentRetry,
 		Generation: 2,
-		Due:        true,
 	}
 
 	rel := dispatch.NewRelay(&stubJobs{
@@ -131,5 +144,31 @@ func TestRelayPromoteAndMarkSkip(t *testing.T) {
 	err := rel.Tick(t.Context())
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRelayNotDueRetryDoesNotPublish(t *testing.T) {
+	t.Parallel()
+
+	item := dispatch.Intent{
+		ID:         testJobID,
+		Queue:      "jobs.delay.60s",
+		Kind:       dispatch.IntentRetry,
+		Generation: 2,
+	}
+
+	pub := new(recPub)
+	rel := dispatch.NewRelay(&stubJobs{
+		pending:    []dispatch.Intent{item},
+		promoteErr: dispatch.ErrNotFound,
+	}, pub, dispatch.Config{Limit: 8}, zap.NewNop())
+
+	err := rel.Tick(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if pub.last().n != 0 {
+		t.Fatalf("not-due retry published n=%d", pub.last().n)
 	}
 }

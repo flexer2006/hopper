@@ -8,6 +8,7 @@ var (
 	ErrInvalidType        = errors.New("invalid job type")
 	ErrInvalidMaxAttempts = errors.New("invalid max_attempts")
 	ErrInvalidJobID       = errors.New("invalid job id")
+	ErrNotFound           = errors.New("job not found")
 	ErrReplayNotDead      = errors.New("replay requires dead status")
 	ErrReplayCap          = errors.New("replay cap reached")
 	ErrDeliveryCap        = errors.New("delivery_starts cap")

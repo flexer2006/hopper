@@ -148,3 +148,75 @@ func TestMarkPublishedMissingMapsDispatchNotFound(t *testing.T) {
 		t.Fatalf("MarkPublished missing err = %v, want dispatch.ErrNotFound", err)
 	}
 }
+
+func TestListExpiredLeasesFakeClock(t *testing.T) {
+	t.Parallel()
+
+	clk := newClock(t)
+	st := newStore(t, clk, 30*time.Second)
+	const secondID = "cccccccccccccccccccccccc"
+
+	mustInsert(t, st, testRecord(testJobID, testKey, 5))
+	mustInsert(t, st, testRecord(secondID, "idem-2", 5))
+	mustClaim(t, st)
+	_, err := st.Claim(t.Context(), deliver.ClaimIn{ID: secondID, WorkerID: testWorker})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := st.ListExpiredLeases(t.Context(), 8)
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("unexpired ListExpiredLeases = %v err=%v", ids, err)
+	}
+
+	clk.add(31 * time.Second)
+
+	ids, err = st.ListExpiredLeases(t.Context(), 8)
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("expired ListExpiredLeases = %v err=%v", ids, err)
+	}
+
+	ids, err = st.ListExpiredLeases(t.Context(), 1)
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("clamped ListExpiredLeases = %v err=%v", ids, err)
+	}
+
+	ids, err = st.ListExpiredLeases(t.Context(), 0)
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("default-limit ListExpiredLeases = %v err=%v", ids, err)
+	}
+
+	ids, err = st.ListExpiredLeases(t.Context(), 4096)
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("max-clamp ListExpiredLeases = %v err=%v", ids, err)
+	}
+}
+
+func TestListExpiredLeasesSkipsNonRunning(t *testing.T) {
+	t.Parallel()
+
+	clk := newClock(t)
+	st := newStore(t, clk, 30*time.Second)
+	mustInsert(t, st, testRecord(testJobID, testKey, 5))
+	mustInsert(t, st, testRecord("cccccccccccccccccccccccc", "idem-2", 5))
+	out := mustClaim(t, st)
+
+	err := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		ID:           testJobID,
+		FenceToken:   out.FenceToken,
+		Queue:        "jobs",
+		Status:       domain.StatusSucceeded,
+		AttemptsDone: 1,
+		Cycle:        out.Cycle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clk.add(31 * time.Second)
+
+	ids, err := st.ListExpiredLeases(t.Context(), 8)
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("non-running ListExpiredLeases = %v err=%v", ids, err)
+	}
+}

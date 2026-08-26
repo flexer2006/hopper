@@ -10,38 +10,58 @@ import (
 	"github.com/flexer2006/hopper/internal/platform"
 )
 
+type relayHolder struct {
+	relay *dispatch.Relay
+}
+
 type relayIn struct {
 	fx.In
 
-	LC        fx.Lifecycle
 	Log       *zap.Logger
 	Cfg       *platform.Config
 	Jobs      dispatch.Jobs      `optional:"true"`
 	Publisher dispatch.Publisher `optional:"true"`
 }
 
-func startRelay(in relayIn) {
+type relayLife struct {
+	fx.In
+
+	LC     fx.Lifecycle
+	Holder *relayHolder
+}
+
+func newRelayHolder(in relayIn) *relayHolder {
 	if in.Jobs == nil || in.Publisher == nil || in.Cfg == nil {
+		return new(relayHolder)
+	}
+
+	cfg := new(dispatch.Config)
+	cfg.Interval = in.Cfg.RelayInterval
+	cfg.Healing = in.Cfg.HealingInterval
+	cfg.Lease = in.Cfg.LeaseScanInterval
+
+	holder := new(relayHolder)
+	holder.relay = dispatch.NewRelay(in.Jobs, in.Publisher, *cfg, in.Log)
+
+	return holder
+}
+
+func startHeldRelay(in relayLife) {
+	if in.Holder == nil || in.Holder.relay == nil {
 		return
 	}
 
-	relay := dispatch.NewRelay(in.Jobs, in.Publisher, dispatch.Config{
-		Interval: in.Cfg.RelayInterval,
-		Healing:  in.Cfg.HealingInterval,
-		Limit:    dispatch.DefaultLimit,
-	}, in.Log)
-
-	var stop func()
+	var stop func(context.Context) error
 
 	in.LC.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			stop = relay.Start(ctx)
+			stop = in.Holder.relay.Start(ctx)
 
 			return nil
 		},
-		OnStop: func(context.Context) error {
+		OnStop: func(ctx context.Context) error {
 			if stop != nil {
-				stop()
+				return stop(ctx)
 			}
 
 			return nil

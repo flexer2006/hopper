@@ -3,7 +3,8 @@ package domain
 import "strconv"
 
 const (
-	QueueDLQ = "jobs.dlq"
+	QueueJobs = "jobs"
+	QueueDLQ  = "jobs.dlq"
 
 	backoffShiftCap   = 6
 	backoffCapSeconds = 60

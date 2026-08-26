@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/flexer2006/hopper/internal/deliver"
+	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/domain"
 )
 
@@ -14,7 +15,7 @@ func TestApplyOutcomeAppendsAttemptsAndKeepsCycle(t *testing.T) {
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	doc := jobDoc{
 		Attempts: []attemptDoc{{Outcome: string(domain.OutcomeFailure), Cycle: 1, Number: 1}},
-		Dispatch: dispatchDoc{Generation: 2, Cycle: 1, Status: dispatchPublished},
+		Dispatch: dispatchDoc{Generation: 2, Cycle: 1, Status: dispatch.StatusPublished},
 		Status:   string(domain.StatusRunning),
 		Cycle:    1,
 	}

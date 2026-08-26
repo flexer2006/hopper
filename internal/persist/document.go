@@ -74,7 +74,7 @@ func payloadRaw(data []byte) (bson.Raw, error) {
 	}
 
 	if len(data) > maxPayloadBytes {
-		return nil, ErrPayload
+		return nil, ErrTooLarge
 	}
 
 	if !json.Valid(data) || !bytes.HasPrefix(bytes.TrimSpace(data), []byte("{")) {
@@ -134,9 +134,9 @@ func insertDoc(rec enqueue.Record, now time.Time) (jobDoc, error) {
 			CreatedAt:   now,
 			PublishedAt: nil,
 			NotBefore:   nil,
-			Intent:      intentEnqueue,
-			Queue:       queueJobs,
-			Status:      dispatchPending,
+			Intent:      dispatch.IntentEnqueue,
+			Queue:       domain.QueueJobs,
+			Status:      dispatch.StatusPending,
 			Generation:  firstGeneration,
 			Cycle:       job.Cycle,
 			Attempt:     0,
@@ -166,32 +166,119 @@ func (d *jobDoc) existing() enqueue.Existing {
 		ID:             d.ID,
 		RequestHash:    d.RequestHash,
 		DispatchStatus: d.Dispatch.Status,
+		Queue:          d.Dispatch.Queue,
+		Kind:           d.Dispatch.Intent,
+		Generation:     d.Dispatch.Generation,
 	}
 }
 
-func (d *jobDoc) intent(now time.Time) dispatch.Intent {
+func (d *jobDoc) intent() dispatch.Intent {
 	return dispatch.Intent{
 		ID:         d.ID,
 		Queue:      d.Dispatch.Queue,
 		Kind:       d.Dispatch.Intent,
 		Generation: d.Dispatch.Generation,
-		Due:        isDue(d, now),
 	}
 }
 
 func (d *jobDoc) queryJob() query.Job {
+	job := d.querySummary()
+	job.Payload = payloadJSON(d.Payload)
+	job.Attempts = queryAttempts(d.Attempts)
+	job.ReplayHistory = queryReplays(d.ReplayHistory)
+
+	return job
+}
+
+func (d *jobDoc) querySummary() query.Job {
 	return query.Job{
-		CreatedAt:    d.CreatedAt,
-		UpdatedAt:    d.UpdatedAt,
-		ID:           d.ID,
-		Type:         domain.JobType(d.Type),
-		Target:       d.Target,
-		Status:       domain.Status(d.Status),
-		Cycle:        d.Cycle,
-		AttemptsDone: d.AttemptsDone,
-		MaxAttempts:  d.MaxAttempts,
-		ReplayCount:  d.ReplayCount,
+		CreatedAt:     d.CreatedAt,
+		UpdatedAt:     d.UpdatedAt,
+		Payload:       nil,
+		Attempts:      nil,
+		ReplayHistory: nil,
+		ID:            d.ID,
+		Type:          domain.JobType(d.Type),
+		Target:        d.Target,
+		Status:        domain.Status(d.Status),
+		Cycle:         d.Cycle,
+		AttemptsDone:  d.AttemptsDone,
+		MaxAttempts:   d.MaxAttempts,
+		ReplayCount:   d.ReplayCount,
 	}
+}
+
+func payloadJSON(raw bson.Raw) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage("{}")
+	}
+
+	var val map[string]any
+
+	err := bson.Unmarshal(raw, &val)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+
+	encoded, err := json.Marshal(val)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+
+	return encoded
+}
+
+func queryAttempts(rows []attemptDoc) []query.Attempt {
+	out := make([]query.Attempt, 0, len(rows))
+	for i := range rows {
+		row := rows[i]
+		out = append(out, query.Attempt{
+			At:           row.At,
+			Error:        row.Error,
+			Outcome:      row.Outcome,
+			FailureClass: row.FailureClass,
+			Cycle:        row.Cycle,
+			Number:       row.Number,
+			DurationMS:   row.DurationMS,
+			StatusCode:   row.StatusCode,
+		})
+	}
+
+	return out
+}
+
+func queryReplays(rows []replayDoc) []query.ReplayEvent {
+	out := make([]query.ReplayEvent, 0, len(rows))
+	for i := range rows {
+		row := rows[i]
+		out = append(out, query.ReplayEvent{
+			At:        row.At,
+			By:        row.By,
+			FromCycle: row.FromCycle,
+			ToCycle:   row.ToCycle,
+		})
+	}
+
+	return out
+}
+
+func domainAttemptRows(rows []attemptDoc) []domain.Attempt {
+	out := make([]domain.Attempt, 0, len(rows))
+	for i := range rows {
+		row := rows[i]
+		out = append(out, domain.Attempt{
+			At:           row.At,
+			Error:        row.Error,
+			Outcome:      domain.Outcome(row.Outcome),
+			FailureClass: domain.FailureClass(row.FailureClass),
+			Cycle:        row.Cycle,
+			Number:       row.Number,
+			DurationMS:   row.DurationMS,
+			StatusCode:   row.StatusCode,
+		})
+	}
+
+	return out
 }
 
 func mapAttempts(rows []domain.Attempt) []attemptDoc {

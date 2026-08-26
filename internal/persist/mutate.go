@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/flexer2006/hopper/internal/deliver"
+	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/domain"
 )
 
@@ -57,9 +58,9 @@ func applyCapDead(doc *jobDoc, now time.Time) {
 		CreatedAt:   now,
 		PublishedAt: nil,
 		NotBefore:   nil,
-		Intent:      intentDLQ,
+		Intent:      dispatch.IntentDLQ,
 		Queue:       domain.QueueDLQ,
-		Status:      dispatchPending,
+		Status:      dispatch.StatusPending,
 		Generation:  doc.Dispatch.Generation + 1,
 		Cycle:       doc.Cycle,
 		Attempt:     0,
@@ -94,16 +95,16 @@ func applyOutcome(doc *jobDoc, now time.Time, in deliver.OutcomeIn) {
 		return
 	}
 
-	intent := intentRetry
+	intent := dispatch.IntentRetry
 	queue := in.Queue
 
 	if in.Status == domain.StatusDead {
-		intent = intentDLQ
+		intent = dispatch.IntentDLQ
 		queue = domain.QueueDLQ
 	}
 
 	if queue == "" {
-		queue = queueJobs
+		queue = domain.QueueJobs
 	}
 
 	next := dispatchDoc{
@@ -112,7 +113,7 @@ func applyOutcome(doc *jobDoc, now time.Time, in deliver.OutcomeIn) {
 		NotBefore:   nil,
 		Intent:      intent,
 		Queue:       queue,
-		Status:      dispatchPending,
+		Status:      dispatch.StatusPending,
 		Generation:  doc.Dispatch.Generation + 1,
 		Cycle:       doc.Cycle,
 		Attempt:     in.AttemptsDone,
@@ -133,9 +134,9 @@ func applyEnqueuePending(doc *jobDoc, now time.Time) {
 		CreatedAt:   now,
 		PublishedAt: nil,
 		NotBefore:   nil,
-		Intent:      intentEnqueue,
-		Queue:       queueJobs,
-		Status:      dispatchPending,
+		Intent:      dispatch.IntentEnqueue,
+		Queue:       domain.QueueJobs,
+		Status:      dispatch.StatusPending,
 		Generation:  doc.Dispatch.Generation + 1,
 		Cycle:       doc.Cycle,
 		Attempt:     0,
@@ -158,7 +159,7 @@ func healingEligible(doc *jobDoc, now time.Time, age time.Duration) bool {
 		return false
 	}
 
-	if doc.Dispatch.Status != dispatchPublished {
+	if doc.Dispatch.Status != dispatch.StatusPublished {
 		return false
 	}
 
@@ -175,9 +176,9 @@ func applyReplay(doc *jobDoc, now time.Time, by string) {
 		CreatedAt:   now,
 		PublishedAt: nil,
 		NotBefore:   nil,
-		Intent:      intentEnqueue,
-		Queue:       queueJobs,
-		Status:      dispatchPending,
+		Intent:      dispatch.IntentEnqueue,
+		Queue:       domain.QueueJobs,
+		Status:      dispatch.StatusPending,
 		Generation:  doc.Dispatch.Generation + 1,
 		Cycle:       from + 1,
 		Attempt:     0,
@@ -206,7 +207,7 @@ func applyReplay(doc *jobDoc, now time.Time, by string) {
 
 func applyMarkPublished(doc *jobDoc, now time.Time) {
 	published := now
-	doc.Dispatch.Status = dispatchPublished
+	doc.Dispatch.Status = dispatch.StatusPublished
 	doc.Dispatch.PublishedAt = &published
 	doc.UpdatedAt = now
 }

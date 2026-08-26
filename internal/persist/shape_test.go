@@ -181,13 +181,20 @@ func TestLeaseAndNotDueFiltersUseNOW(t *testing.T) {
 	}
 
 	promote := extJSON(t, persist.PromoteDueRetryFilter(testJobID, 2))
-	if !strings.Contains(promote, "retry") || !strings.Contains(promote, "pending") {
+	if !strings.Contains(promote, "retry") || !strings.Contains(promote, "pending") ||
+		!strings.Contains(promote, "$$NOW") {
 		t.Fatalf("PromoteDueRetryFilter = %s", promote)
 	}
 
 	pending := extJSON(t, persist.PendingFilter())
 	if !strings.Contains(pending, "pending") {
 		t.Fatalf("PendingFilter = %s", pending)
+	}
+
+	scan := extJSON(t, persist.LeaseScanFilter())
+	if !strings.Contains(scan, "$$NOW") || !strings.Contains(scan, "claim_expires_at") ||
+		!strings.Contains(scan, "running") {
+		t.Fatalf("LeaseScanFilter = %s", scan)
 	}
 
 	healID := extJSON(t, persist.HealPublishedFilter(testJobID, 4, 30000))

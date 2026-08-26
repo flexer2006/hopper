@@ -12,12 +12,15 @@ type ClaimIn struct {
 }
 
 type ClaimOut struct {
-	FenceToken      string
-	ID              string
-	Status          domain.Status
-	Cycle           int
-	Attempt         int
-	DeadWithoutHTTP bool
+	Payload     []byte
+	Attempts    []domain.Attempt
+	Target      string
+	FenceToken  string
+	ID          string
+	Status      domain.Status
+	Cycle       int
+	Attempt     int
+	MaxAttempts int
 }
 
 type OutcomeIn struct {

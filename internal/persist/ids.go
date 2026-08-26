@@ -3,12 +3,6 @@ package persist
 import "time"
 
 const (
-	queueJobs          = "jobs"
-	intentEnqueue      = "enqueue"
-	intentRetry        = "retry"
-	intentDLQ          = "dlq"
-	dispatchPending    = "pending"
-	dispatchPublished  = "published"
 	defaultLease       = 30 * time.Second
 	leaseMargin        = 5 * time.Second
 	maxPayloadBytes    = 262144
@@ -41,6 +35,7 @@ const (
 	fAttempts          = "attempts"
 	pathCycle          = "$cycle"
 	pathAttempts       = "$attempts"
+	pathClaimExpiresAt = "$claim_expires_at"
 	opExpr             = "$expr"
 	opAdd              = "$add"
 	opSet              = "$set"

@@ -20,10 +20,10 @@ func clampScan(limit int) int {
 	return limit
 }
 
-func mapIntents(docs []jobDoc, now time.Time) []dispatch.Intent {
+func mapIntents(docs []jobDoc) []dispatch.Intent {
 	out := make([]dispatch.Intent, 0, len(docs))
 	for i := range docs {
-		out = append(out, docs[i].intent(now))
+		out = append(out, docs[i].intent())
 	}
 
 	return out
@@ -35,7 +35,21 @@ func (s *Store) ListPending(ctx context.Context, limit int) ([]dispatch.Intent, 
 		return nil, err
 	}
 
-	return mapIntents(docs, s.now().UTC()), nil
+	return mapIntents(docs), nil
+}
+
+func (s *Store) ListExpiredLeases(ctx context.Context, limit int) ([]string, error) {
+	docs, err := s.coll.listExpiredLeases(ctx, clampScan(limit))
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]string, len(docs))
+	for i := range docs {
+		ids[i] = docs[i].ID
+	}
+
+	return ids, nil
 }
 
 func (s *Store) ListDueHealing(ctx context.Context, age time.Duration, limit int) ([]dispatch.Intent, error) {
@@ -44,7 +58,7 @@ func (s *Store) ListDueHealing(ctx context.Context, age time.Duration, limit int
 		return nil, err
 	}
 
-	return mapIntents(docs, s.now().UTC()), nil
+	return mapIntents(docs), nil
 }
 
 func (s *Store) PromoteDueRetry(ctx context.Context, id string, generation int) (dispatch.Intent, error) {
@@ -73,5 +87,5 @@ func (s *Store) mapCAS(doc *jobDoc, err error) (dispatch.Intent, error) {
 		return dispatch.Intent{}, err
 	}
 
-	return doc.intent(s.now().UTC()), nil
+	return doc.intent(), nil
 }

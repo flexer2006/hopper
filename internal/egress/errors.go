@@ -1,10 +1,10 @@
 package egress
 
-import "errors"
+import "github.com/flexer2006/hopper/internal/deliver"
 
 var (
-	ErrBlocked         = errors.New("ssrf destination blocked")
-	ErrBodyLimit       = errors.New("response exceeds 1 MiB")
-	ErrInvalidRequest  = errors.New("invalid egress request")
-	ErrEmptyResolution = errors.New("dns returned no addresses")
+	ErrBlocked         = deliver.ErrBlocked
+	ErrBodyLimit       = deliver.ErrBodyLimit
+	ErrInvalidRequest  = deliver.ErrInvalidHTTP
+	ErrEmptyResolution = deliver.ErrEmptyDNS
 )

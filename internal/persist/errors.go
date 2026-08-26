@@ -3,28 +3,31 @@ package persist
 import (
 	"errors"
 
+	"github.com/flexer2006/hopper/internal/deliver"
 	"github.com/flexer2006/hopper/internal/dispatch"
+	"github.com/flexer2006/hopper/internal/domain"
+	"github.com/flexer2006/hopper/internal/enqueue"
 )
 
 var (
-	ErrNotFound        = errors.New("job not found")
-	ErrClaimConflict   = errors.New("claim lost to concurrent update")
-	ErrDuplicateKey    = errors.New("duplicate producer idempotency key")
+	ErrNotFound        = domain.ErrNotFound
+	ErrClaimConflict   = deliver.ErrClaimLost
+	ErrDuplicateKey    = enqueue.ErrDuplicateKey
 	ErrInvalidStatus   = errors.New("invalid outcome status")
 	ErrStandalone      = errors.New("mongodb replica set required")
 	ErrStaleFence      = errors.New("stale fence token")
 	ErrStaleGeneration = dispatch.ErrStaleGeneration
-	ErrNotDue          = errors.New("job not_before is future")
-	ErrLeaseHeld       = errors.New("job running with unexpired lease")
-	ErrTerminal        = errors.New("job is terminal")
-	ErrDeliveryCap     = errors.New("delivery_starts cap")
+	ErrNotDue          = deliver.ErrNotDue
+	ErrLeaseHeld       = deliver.ErrLeaseHeld
+	ErrTerminal        = deliver.ErrTerminal
+	ErrNotRunning      = deliver.ErrNotRunning
 	ErrInvalidID       = errors.New("invalid job id")
 	ErrInvalidHash     = errors.New("invalid request hash")
 	ErrInvalidKey      = errors.New("invalid producer idempotency key")
-	ErrPayload         = errors.New("invalid payload")
+	ErrPayload         = enqueue.ErrInvalid
+	ErrTooLarge        = enqueue.ErrTooLarge
 	ErrLeaseBudget     = errors.New("claim lease shorter than persist budget")
-	ErrNotRunning      = errors.New("job is not running")
-	ErrReplayNotDead   = errors.New("replay requires dead status")
-	ErrReplayCap       = errors.New("replay cap reached")
+	ErrReplayNotDead   = domain.ErrReplayNotDead
+	ErrReplayCap       = domain.ErrReplayCap
 	ErrWorkerID        = errors.New("invalid claimed_by")
 )

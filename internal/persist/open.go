@@ -83,11 +83,15 @@ func ready(ctx context.Context, client *mongo.Client, opts Options) (*Store, err
 		return nil, fmt.Errorf("mongo indexes: %w", err)
 	}
 
-	return &Store{
-		coll:     &mongoColl{coll: coll},
-		now:      func() time.Time { return time.Now().UTC() },
-		newFence: randomFence,
-		lease:    opts.Lease,
-		client:   client,
-	}, nil
+	jobs := new(mongoColl)
+	jobs.coll = coll
+
+	store := new(Store)
+	store.coll = jobs
+	store.now = func() time.Time { return time.Now().UTC() }
+	store.newFence = randomFence
+	store.lease = opts.Lease
+	store.client = client
+
+	return store, nil
 }

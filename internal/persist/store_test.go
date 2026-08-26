@@ -95,10 +95,6 @@ func mustClaim(t *testing.T, st *persist.Store) deliver.ClaimOut {
 		t.Fatalf("Claim() err = %v", err)
 	}
 
-	if out.DeadWithoutHTTP {
-		t.Fatal("Claim() DeadWithoutHTTP")
-	}
-
 	return out
 }
 
@@ -122,7 +118,8 @@ func TestInsertQueuedAndDuplicateKey(t *testing.T) {
 		t.Fatalf("ByProducerKey() err = %v", err)
 	}
 
-	if existing.ID != testJobID || existing.DispatchStatus != "pending" || existing.RequestHash != testHash {
+	if existing.ID != testJobID || existing.DispatchStatus != "pending" || existing.RequestHash != testHash ||
+		existing.Generation != 1 || existing.Kind != "enqueue" || existing.Queue != "jobs" {
 		t.Fatalf("ByProducerKey() = %+v", existing)
 	}
 
@@ -176,7 +173,8 @@ func TestClaimSuccessAndStaleFence(t *testing.T) {
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 	out := mustClaim(t, st)
 
-	if out.Status != domain.StatusRunning || out.Attempt != 1 || out.FenceToken == "" {
+	if out.Status != domain.StatusRunning || out.Attempt != 1 || out.FenceToken == "" ||
+		out.Target != testTarget || out.MaxAttempts != 5 || len(out.Payload) == 0 {
 		t.Fatalf("Claim() = %+v", out)
 	}
 
@@ -305,12 +303,11 @@ func TestClaimCompetingOneWinner(t *testing.T) {
 	const n = 8
 	var wg sync.WaitGroup
 	errs := make([]error, n)
-	outs := make([]deliver.ClaimOut, n)
 	wg.Add(n)
 	for i := range n {
 		go func(i int) {
 			defer wg.Done()
-			outs[i], errs[i] = st.Claim(t.Context(), deliver.ClaimIn{
+			_, errs[i] = st.Claim(t.Context(), deliver.ClaimIn{
 				ID:       testJobID,
 				WorkerID: testWorker,
 			})
@@ -320,7 +317,7 @@ func TestClaimCompetingOneWinner(t *testing.T) {
 
 	wins := 0
 	for i := range n {
-		if errs[i] == nil && !outs[i].DeadWithoutHTTP {
+		if errs[i] == nil {
 			wins++
 			continue
 		}
@@ -334,7 +331,7 @@ func TestClaimCompetingOneWinner(t *testing.T) {
 	}
 }
 
-func TestDeliveryStartsCapDeadWithoutHTTP(t *testing.T) {
+func TestDeliveryStartsCap(t *testing.T) {
 	t.Parallel()
 
 	clk := newClock(t)
@@ -350,9 +347,9 @@ func TestDeliveryStartsCapDeadWithoutHTTP(t *testing.T) {
 		}
 	}
 
-	out, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
-	if !errors.Is(err, persist.ErrDeliveryCap) || !out.DeadWithoutHTTP || out.Status != domain.StatusDead {
-		t.Fatalf("cap Claim() out=%+v err=%v", out, err)
+	_, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
+	if !errors.Is(err, domain.ErrDeliveryCap) {
+		t.Fatalf("cap Claim() err=%v", err)
 	}
 
 	got, err := st.Get(t.Context(), testJobID)
@@ -401,13 +398,52 @@ func TestRecoverExpiredLeaseFakeClock(t *testing.T) {
 	}
 }
 
+func TestClaimVsExpiredLeaseRecoverRace(t *testing.T) {
+	t.Parallel()
+
+	for range 32 {
+		clk := newClock(t)
+		st := newStore(t, clk, 30*time.Second)
+		mustInsert(t, st, testRecord(testJobID, testKey, 5))
+		mustClaim(t, st)
+		clk.add(31 * time.Second)
+
+		var wg sync.WaitGroup
+
+		wg.Go(func() {
+			_, recErr := st.RecoverExpiredLease(t.Context(), testJobID)
+			if recErr != nil {
+				t.Errorf("RecoverExpiredLease: %v", recErr)
+			}
+		})
+		wg.Go(func() {
+			_, claimErr := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
+			if claimErr != nil && !errors.Is(claimErr, persist.ErrNotRunning) {
+				t.Errorf("Claim: %v", claimErr)
+			}
+		})
+		wg.Wait()
+
+		got, err := st.Get(t.Context(), testJobID)
+		if err != nil {
+			t.Fatalf("Get() after race err = %v", err)
+		}
+
+		switch got.Status {
+		case domain.StatusQueued, domain.StatusRunning:
+		default:
+			t.Fatalf("after race status = %s", got.Status)
+		}
+	}
+}
+
 func TestDeadOutcomeReplayAndCap(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, 30*time.Second)
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
-	err := st.Replay(t.Context(), replay.Request{ID: testJobID, By: "ops"})
+	_, err := st.Replay(t.Context(), replay.Request{ID: testJobID, By: "ops"})
 	if !errors.Is(err, persist.ErrReplayNotDead) {
 		t.Fatalf("replay queued err = %v", err)
 	}
@@ -424,7 +460,7 @@ func TestDeadOutcomeReplayAndCap(t *testing.T) {
 		if err != nil {
 			t.Fatalf("dead outcome err = %v", err)
 		}
-		err = st.Replay(t.Context(), replay.Request{ID: testJobID, By: "ops"})
+		_, err = st.Replay(t.Context(), replay.Request{ID: testJobID, By: "ops"})
 		if err != nil {
 			t.Fatalf("Replay() err = %v", err)
 		}
@@ -442,7 +478,7 @@ func TestDeadOutcomeReplayAndCap(t *testing.T) {
 		t.Fatalf("final dead err = %v", err)
 	}
 
-	err = st.Replay(t.Context(), replay.Request{ID: testJobID, By: "ops"})
+	_, err = st.Replay(t.Context(), replay.Request{ID: testJobID, By: "ops"})
 	if !errors.Is(err, persist.ErrReplayCap) {
 		t.Fatalf("Replay() at cap err = %v, want ErrReplayCap", err)
 	}
@@ -472,7 +508,7 @@ func TestClaimValidationAndMissing(t *testing.T) {
 		t.Fatalf("missing get err = %v", err)
 	}
 
-	err = st.Replay(t.Context(), replay.Request{})
+	_, err = st.Replay(t.Context(), replay.Request{})
 	if !errors.Is(err, persist.ErrInvalidID) {
 		t.Fatalf("empty replay id err = %v", err)
 	}
@@ -485,7 +521,8 @@ func TestQueryJobTypeOmitsInternalFields(t *testing.T) {
 	for field := range rt.Fields() {
 		name := field.Name
 		switch name {
-		case "FenceToken", "Dispatch", "RequestHash", "ProducerKey", "Payload", "ClaimedBy", "ClaimExpiresAt":
+		case "FenceToken", "Dispatch", "RequestHash", "ProducerKey", "ClaimedBy", "ClaimExpiresAt",
+			"DeliveryStarts", "NotBefore":
 			t.Fatalf("query.Job exposes %s (SEC-18)", name)
 		}
 	}
@@ -509,7 +546,7 @@ func TestCommitOutcomeWrongCycleAfterReplay(t *testing.T) {
 		t.Fatalf("dead outcome err = %v", err)
 	}
 
-	err = st.Replay(t.Context(), replay.Request{ID: testJobID, By: "ops"})
+	_, err = st.Replay(t.Context(), replay.Request{ID: testJobID, By: "ops"})
 	if err != nil {
 		t.Fatalf("Replay() err = %v", err)
 	}
@@ -581,7 +618,7 @@ func TestClaimEmptyWorker(t *testing.T) {
 		t.Fatalf("empty worker err = %v", err)
 	}
 
-	err = st.Replay(t.Context(), replay.Request{ID: testJobID, By: strings.Repeat("b", 129)})
+	_, err = st.Replay(t.Context(), replay.Request{ID: testJobID, By: strings.Repeat("b", 129)})
 	if !errors.Is(err, persist.ErrWorkerID) {
 		t.Fatalf("long replay by err = %v", err)
 	}
@@ -627,7 +664,7 @@ func TestInsertMoreValidation(t *testing.T) {
 	rec = testRecord("cccccccccccccccccccccccc", "idem-2", 5)
 	rec.Payload = []byte(`{"x":"` + strings.Repeat("a", 262144) + `"}`)
 	err = st.Insert(t.Context(), rec)
-	if !errors.Is(err, persist.ErrPayload) {
+	if !errors.Is(err, persist.ErrTooLarge) {
 		t.Fatalf("huge payload err = %v", err)
 	}
 
@@ -711,5 +748,34 @@ func TestHexRejectsUppercase(t *testing.T) {
 	err := st.Insert(t.Context(), rec)
 	if !errors.Is(err, persist.ErrInvalidID) {
 		t.Fatalf("uppercase id err = %v", err)
+	}
+}
+
+func TestListDead(t *testing.T) {
+	t.Parallel()
+
+	st := newStore(t, nil, 30*time.Second)
+	mustInsert(t, st, testRecord(testJobID, testKey, 5))
+
+	items, err := st.ListDead(t.Context(), 10)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("empty dead list = %+v %v", items, err)
+	}
+
+	out := mustClaim(t, st)
+	err = st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		ID:           testJobID,
+		FenceToken:   out.FenceToken,
+		Status:       domain.StatusDead,
+		AttemptsDone: 1,
+		Cycle:        out.Cycle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, err = st.ListDead(t.Context(), 0)
+	if err != nil || len(items) != 1 || items[0].ID != testJobID || items[0].Status != domain.StatusDead {
+		t.Fatalf("list dead = %+v %v", items, err)
 	}
 }

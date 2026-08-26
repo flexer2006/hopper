@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Interval time.Duration
 	Healing  time.Duration
+	Lease    time.Duration
 	Limit    int
 }
 
@@ -21,12 +22,14 @@ type Relay struct {
 	log      *zap.Logger
 	interval time.Duration
 	healing  time.Duration
+	lease    time.Duration
 	limit    int
 }
 
 const (
 	DefaultInterval = 2 * time.Second
 	DefaultHealing  = 30 * time.Second
+	DefaultLease    = 5 * time.Second
 	DefaultLimit    = 64
 	maxLimit        = 256
 )
@@ -40,18 +43,24 @@ func NewRelay(jobs Jobs, pub Publisher, cfg Config, log *zap.Logger) *Relay {
 		cfg.Healing = DefaultHealing
 	}
 
+	if cfg.Lease <= 0 {
+		cfg.Lease = DefaultLease
+	}
+
 	if log == nil {
 		log = zap.NewNop()
 	}
 
-	return &Relay{
-		jobs:     jobs,
-		pub:      pub,
-		log:      log,
-		interval: cfg.Interval,
-		healing:  cfg.Healing,
-		limit:    clampLimit(cfg.Limit),
-	}
+	rel := new(Relay)
+	rel.jobs = jobs
+	rel.pub = pub
+	rel.log = log
+	rel.interval = cfg.Interval
+	rel.healing = cfg.Healing
+	rel.lease = cfg.Lease
+	rel.limit = clampLimit(cfg.Limit)
+
+	return rel
 }
 
 func clampLimit(limit int) int {
@@ -79,24 +88,7 @@ func (r *Relay) Publish(ctx context.Context, in Intent) error {
 	return r.publishOne(ctx, in)
 }
 
-func (r *Relay) Run(ctx context.Context) error {
-	ticker := time.NewTicker(r.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			tickErr := r.Tick(ctx)
-			if tickErr != nil && !errors.Is(tickErr, context.Canceled) {
-				r.log.Warn("relay tick", zap.Error(tickErr))
-			}
-		}
-	}
-}
-
-func (r *Relay) Start(parent context.Context) func() {
+func (r *Relay) Start(parent context.Context) func(context.Context) error {
 	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
 
 	var wg sync.WaitGroup
@@ -108,9 +100,10 @@ func (r *Relay) Start(parent context.Context) func() {
 		}
 	})
 
-	return func() {
+	return func(stopCtx context.Context) error {
 		cancel()
-		wg.Wait()
+
+		return waitDone(stopCtx, &wg)
 	}
 }
 
@@ -172,16 +165,11 @@ func (r *Relay) publishOne(ctx context.Context, in Intent) error {
 		return pubErr
 	}
 
-	markErr := r.jobs.MarkPublished(ctx, target.ID, target.Generation)
-	if skipIntent(markErr) {
-		return nil
-	}
-
-	return markErr
+	return r.jobs.MarkPublished(ctx, target.ID, target.Generation)
 }
 
 func (r *Relay) prepare(ctx context.Context, in Intent) (Intent, error) {
-	if in.Kind != IntentRetry || !in.Due {
+	if in.Kind != IntentRetry {
 		return in, nil
 	}
 
@@ -204,4 +192,20 @@ func (r *Relay) logIntent(msg string, in Intent, err error) {
 		zap.String("outcome", "pending"),
 		zap.Error(err),
 	)
+}
+
+func waitDone(ctx context.Context, wg *sync.WaitGroup) error {
+	done := make(chan struct{})
+
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

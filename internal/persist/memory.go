@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexer2006/hopper/internal/deliver"
+	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/domain"
 )
 
@@ -18,12 +19,12 @@ type mem struct {
 }
 
 func newMem(now func() time.Time) *mem {
-	return &mem{
-		now:  now,
-		docs: make(map[string]jobDoc),
-		keys: make(map[string]string),
-		mu:   sync.Mutex{},
-	}
+	store := new(mem)
+	store.now = now
+	store.docs = make(map[string]jobDoc)
+	store.keys = make(map[string]string)
+
+	return store
 }
 
 func (m *mem) insert(_ context.Context, doc *jobDoc) error {
@@ -137,7 +138,7 @@ func (m *mem) markPublished(_ context.Context, id string, generation int) (jobDo
 		return jobDoc{}, ErrNotFound
 	}
 
-	if doc.Dispatch.Generation != generation || doc.Dispatch.Status != dispatchPending {
+	if doc.Dispatch.Generation != generation || doc.Dispatch.Status != dispatch.StatusPending {
 		return jobDoc{}, ErrStaleGeneration
 	}
 
@@ -210,7 +211,24 @@ func (m *mem) listPending(_ context.Context, limit int) ([]jobDoc, error) {
 
 	for i := range m.docs {
 		doc := m.docs[i]
-		if doc.Dispatch.Status == dispatchPending {
+		if doc.Dispatch.Status == dispatch.StatusPending {
+			out = append(out, doc)
+		}
+	}
+
+	return capSorted(out, limit), nil
+}
+
+func (m *mem) listExpiredLeases(_ context.Context, limit int) ([]jobDoc, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := m.now().UTC()
+	out := make([]jobDoc, 0)
+
+	for id := range m.docs {
+		doc := m.docs[id]
+		if leaseExpired(&doc, now) {
 			out = append(out, doc)
 		}
 	}
@@ -233,6 +251,34 @@ func (m *mem) listDueHealing(_ context.Context, age time.Duration, limit int) ([
 	}
 
 	return capSorted(out, limit), nil
+}
+
+func (m *mem) listDead(_ context.Context, limit int) ([]jobDoc, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	out := make([]jobDoc, 0)
+
+	for i := range m.docs {
+		doc := m.docs[i]
+		if doc.Status == string(domain.StatusDead) {
+			out = append(out, doc)
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
+			return out[i].ID > out[j].ID
+		}
+
+		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+	})
+
+	if limit > 0 && len(out) > limit {
+		return out[:limit], nil
+	}
+
+	return out, nil
 }
 
 func (m *mem) promoteDueRetry(_ context.Context, id string, generation int) (jobDoc, error) {
@@ -278,8 +324,8 @@ func (m *mem) startHealing(_ context.Context, id string, generation int, age tim
 func dueRetryPending(doc *jobDoc, now time.Time, generation int) bool {
 	return doc.Status == string(domain.StatusQueued) &&
 		doc.Dispatch.Generation == generation &&
-		doc.Dispatch.Status == dispatchPending &&
-		doc.Dispatch.Intent == intentRetry &&
+		doc.Dispatch.Status == dispatch.StatusPending &&
+		doc.Dispatch.Intent == dispatch.IntentRetry &&
 		isDue(doc, now)
 }
 

@@ -5,6 +5,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/domain"
 )
 
@@ -62,14 +63,14 @@ func MarkPublishedFilter(id string, generation int) bson.D {
 	return bson.D{
 		{Key: fID, Value: id},
 		{Key: "dispatch.generation", Value: generation},
-		{Key: fDispatchStatus, Value: dispatchPending},
+		{Key: fDispatchStatus, Value: dispatch.StatusPending},
 	}
 }
 
 func MarkPublishedPipeline() mongo.Pipeline {
 	return mongo.Pipeline{
 		bson.D{{Key: opSet, Value: bson.D{
-			{Key: fDispatchStatus, Value: dispatchPublished},
+			{Key: fDispatchStatus, Value: dispatch.StatusPublished},
 			{Key: "dispatch.published_at", Value: serverNow},
 			{Key: fUpdatedAt, Value: serverNow},
 		}}},
@@ -85,11 +86,18 @@ func OutcomeFilter(id, fence string, cycle int) bson.D {
 	}
 }
 
+func LeaseScanFilter() bson.D {
+	return bson.D{
+		{Key: fStatus, Value: string(domain.StatusRunning)},
+		{Key: opExpr, Value: bson.D{{Key: opLt, Value: bson.A{pathClaimExpiresAt, serverNow}}}},
+	}
+}
+
 func LeaseFilter(id string) bson.D {
 	return bson.D{
 		{Key: fID, Value: id},
 		{Key: fStatus, Value: string(domain.StatusRunning)},
-		{Key: opExpr, Value: bson.D{{Key: opLt, Value: bson.A{"$claim_expires_at", serverNow}}}},
+		{Key: opExpr, Value: bson.D{{Key: opLt, Value: bson.A{pathClaimExpiresAt, serverNow}}}},
 	}
 }
 
@@ -102,7 +110,7 @@ func ReplayFilter(id string) bson.D {
 }
 
 func PendingFilter() bson.D {
-	return bson.D{{Key: fDispatchStatus, Value: dispatchPending}}
+	return bson.D{{Key: fDispatchStatus, Value: dispatch.StatusPending}}
 }
 
 func healingAgeClause(ageMs int64) bson.D {
@@ -118,7 +126,7 @@ func healingAgeClause(ageMs int64) bson.D {
 func HealingFilter(ageMs int64) bson.D {
 	return bson.D{
 		{Key: fStatus, Value: string(domain.StatusQueued)},
-		{Key: fDispatchStatus, Value: dispatchPublished},
+		{Key: fDispatchStatus, Value: dispatch.StatusPublished},
 		{Key: opAnd, Value: bson.A{dueClause(), healingAgeClause(ageMs)}},
 	}
 }
@@ -128,8 +136,8 @@ func PromoteDueRetryFilter(id string, generation int) bson.D {
 		{Key: fID, Value: id},
 		{Key: fStatus, Value: string(domain.StatusQueued)},
 		{Key: fDispatchGen, Value: generation},
-		{Key: fDispatchStatus, Value: dispatchPending},
-		{Key: fDispatchIntent, Value: intentRetry},
+		{Key: fDispatchStatus, Value: dispatch.StatusPending},
+		{Key: fDispatchIntent, Value: dispatch.IntentRetry},
 		{Key: opAnd, Value: bson.A{dueClause()}},
 	}
 }
@@ -146,7 +154,7 @@ func LeaseHeldFilter(id string) bson.D {
 	return bson.D{
 		{Key: fID, Value: id},
 		{Key: fStatus, Value: string(domain.StatusRunning)},
-		{Key: opExpr, Value: bson.D{{Key: "$gte", Value: bson.A{"$claim_expires_at", serverNow}}}},
+		{Key: opExpr, Value: bson.D{{Key: "$gte", Value: bson.A{pathClaimExpiresAt, serverNow}}}},
 	}
 }
 
@@ -172,7 +180,7 @@ func IndexModels() []mongo.IndexModel {
 		{
 			Keys: bson.D{{Key: fDispatchStatus, Value: 1}},
 			Options: options.Index().SetName("dispatch_pending").SetPartialFilterExpression(bson.D{
-				{Key: fDispatchStatus, Value: dispatchPending},
+				{Key: fDispatchStatus, Value: dispatch.StatusPending},
 			}),
 		},
 		{

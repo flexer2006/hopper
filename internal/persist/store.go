@@ -28,7 +28,9 @@ type collection interface { //nolint:interfacebloat // persist test double mirro
 	replay(ctx context.Context, id, by string) (jobDoc, error)
 	skipReason(ctx context.Context, id string) error
 	listPending(ctx context.Context, limit int) ([]jobDoc, error)
+	listExpiredLeases(ctx context.Context, limit int) ([]jobDoc, error)
 	listDueHealing(ctx context.Context, age time.Duration, limit int) ([]jobDoc, error)
+	listDead(ctx context.Context, limit int) ([]jobDoc, error)
 	promoteDueRetry(ctx context.Context, id string, generation int) (jobDoc, error)
 	startHealing(ctx context.Context, id string, generation int, age time.Duration) (jobDoc, error)
 }
@@ -62,13 +64,13 @@ func NewMemory(now func() time.Time, lease time.Duration) *Store {
 		lease = defaultLease
 	}
 
-	return &Store{
-		coll:     newMem(now),
-		now:      now,
-		newFence: randomFence,
-		client:   nil,
-		lease:    lease,
-	}
+	store := new(Store)
+	store.coll = newMem(now)
+	store.now = now
+	store.newFence = randomFence
+	store.lease = lease
+
+	return store
 }
 
 //nolint:gocritic // hugeParam: enqueue.Store
@@ -119,7 +121,7 @@ func (s *Store) Claim(ctx context.Context, in deliver.ClaimIn) (deliver.ClaimOut
 		return deliver.ClaimOut{}, err
 	}
 
-	return s.claimAfterMiss(ctx, in.ID)
+	return s.claimAfterMiss(ctx, in, fence)
 }
 
 //nolint:gocritic // hugeParam: deliver.Jobs
@@ -156,18 +158,49 @@ func (s *Store) RecoverExpiredLease(ctx context.Context, id string) (bool, error
 	return false, err
 }
 
-func (s *Store) Replay(ctx context.Context, rec replay.Request) error {
+func (s *Store) Replay(ctx context.Context, rec replay.Request) (replay.Result, error) {
 	if rec.ID == "" {
-		return ErrInvalidID
+		return replay.Result{}, ErrInvalidID
 	}
 
 	if len(rec.By) > maxReplayBy {
-		return ErrWorkerID
+		return replay.Result{}, ErrWorkerID
 	}
 
-	_, err := s.coll.replay(ctx, rec.ID, rec.By)
+	doc, err := s.coll.replay(ctx, rec.ID, rec.By)
+	if err != nil {
+		return replay.Result{}, err
+	}
 
-	return err
+	return replay.Result{
+		ID:         doc.ID,
+		Status:     domain.Status(doc.Status),
+		Cycle:      doc.Cycle,
+		Generation: doc.Dispatch.Generation,
+		Accepted:   false,
+	}, nil
+}
+
+func (s *Store) ListDead(ctx context.Context, limit int) ([]query.Job, error) {
+	if limit <= 0 {
+		limit = query.DefaultListLimit
+	}
+
+	if limit > query.DefaultListLimit {
+		limit = query.DefaultListLimit
+	}
+
+	docs, err := s.coll.listDead(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]query.Job, 0, len(docs))
+	for i := range docs {
+		out = append(out, docs[i].querySummary())
+	}
+
+	return out, nil
 }
 
 func (s *Store) Close(ctx context.Context) error {
@@ -183,17 +216,31 @@ func (s *Store) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) claimAfterMiss(ctx context.Context, id string) (deliver.ClaimOut, error) {
-	dead, err := s.coll.capDead(ctx, id)
+func (s *Store) claimAfterMiss(ctx context.Context, in deliver.ClaimIn, fence string) (deliver.ClaimOut, error) {
+	_, err := s.coll.capDead(ctx, in.ID)
 	if err == nil {
-		return capClaim(&dead), ErrDeliveryCap
+		return deliver.ClaimOut{}, domain.ErrDeliveryCap
 	}
 
 	if !errors.Is(err, ErrNotFound) {
 		return deliver.ClaimOut{}, err
 	}
 
-	return deliver.ClaimOut{}, s.coll.skipReason(ctx, id)
+	skip := s.coll.skipReason(ctx, in.ID)
+	if !errors.Is(skip, ErrClaimConflict) {
+		return deliver.ClaimOut{}, skip
+	}
+
+	doc, err := s.coll.claimDue(ctx, in.ID, in.WorkerID, fence, s.lease)
+	if err == nil {
+		return runningClaim(&doc), nil
+	}
+
+	if !errors.Is(err, ErrNotFound) {
+		return deliver.ClaimOut{}, err
+	}
+
+	return deliver.ClaimOut{}, s.coll.skipReason(ctx, in.ID)
 }
 
 func validateClaim(in deliver.ClaimIn) error {
@@ -223,25 +270,18 @@ func validateOutcome(in deliver.OutcomeIn) error {
 }
 
 func runningClaim(doc *jobDoc) deliver.ClaimOut {
-	return deliver.ClaimOut{
-		FenceToken:      doc.FenceToken,
-		ID:              doc.ID,
-		Status:          domain.Status(doc.Status),
-		Cycle:           doc.Cycle,
-		Attempt:         doc.AttemptsDone + 1,
-		DeadWithoutHTTP: false,
-	}
-}
+	out := new(deliver.ClaimOut)
+	out.Payload = payloadJSON(doc.Payload)
+	out.Attempts = domainAttemptRows(doc.Attempts)
+	out.Target = doc.Target
+	out.FenceToken = doc.FenceToken
+	out.ID = doc.ID
+	out.Status = domain.Status(doc.Status)
+	out.Cycle = doc.Cycle
+	out.Attempt = doc.AttemptsDone + 1
+	out.MaxAttempts = doc.MaxAttempts
 
-func capClaim(doc *jobDoc) deliver.ClaimOut {
-	return deliver.ClaimOut{
-		FenceToken:      "",
-		ID:              doc.ID,
-		Status:          domain.StatusDead,
-		Cycle:           doc.Cycle,
-		Attempt:         doc.AttemptsDone + 1,
-		DeadWithoutHTTP: true,
-	}
+	return *out
 }
 
 func randomFence() (string, error) {

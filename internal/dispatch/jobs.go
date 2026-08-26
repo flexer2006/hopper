@@ -11,12 +11,12 @@ type Intent struct {
 	Queue      string
 	Kind       string
 	Generation int
-	Due        bool
 }
 
 type Jobs interface {
 	MarkPublished(ctx context.Context, id string, generation int) error
 	RecoverExpiredLease(ctx context.Context, id string) (bool, error)
+	ListExpiredLeases(ctx context.Context, limit int) ([]string, error)
 	ListPending(ctx context.Context, limit int) ([]Intent, error)
 	ListDueHealing(ctx context.Context, age time.Duration, limit int) ([]Intent, error)
 	PromoteDueRetry(ctx context.Context, id string, generation int) (Intent, error)
@@ -28,9 +28,11 @@ type Publisher interface {
 }
 
 const (
-	IntentEnqueue = "enqueue"
-	IntentRetry   = "retry"
-	IntentDLQ     = "dlq"
+	IntentEnqueue   = "enqueue"
+	IntentRetry     = "retry"
+	IntentDLQ       = "dlq"
+	StatusPending   = "pending"
+	StatusPublished = "published"
 )
 
 var (

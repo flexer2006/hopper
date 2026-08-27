@@ -57,3 +57,51 @@ func TestApplyOutcomeAppendsAttemptsAndKeepsCycle(t *testing.T) {
 		t.Fatalf("empty Attempts wiped journal: %+v", doc.Attempts)
 	}
 }
+
+func TestHealingEligibleGates(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	age := 30 * time.Second
+	old := now.Add(-age)
+	recent := now.Add(-time.Second)
+	future := now.Add(time.Minute)
+
+	queuedPublished := jobDoc{
+		Dispatch: dispatchDoc{Status: dispatch.StatusPublished, PublishedAt: &old},
+		Status:   string(domain.StatusQueued),
+	}
+	if !healingEligible(&queuedPublished, now, age) {
+		t.Fatal("aged published queued should heal")
+	}
+
+	pending := queuedPublished
+	pending.Dispatch.Status = dispatch.StatusPending
+	if healingEligible(&pending, now, age) {
+		t.Fatal("pending dispatch must not heal")
+	}
+
+	nilPublished := queuedPublished
+	nilPublished.Dispatch.PublishedAt = nil
+	if !healingEligible(&nilPublished, now, age) {
+		t.Fatal("published with nil PublishedAt should heal")
+	}
+
+	fresh := queuedPublished
+	fresh.Dispatch.PublishedAt = &recent
+	if healingEligible(&fresh, now, age) {
+		t.Fatal("fresh published must not heal")
+	}
+
+	running := queuedPublished
+	running.Status = string(domain.StatusRunning)
+	if healingEligible(&running, now, age) {
+		t.Fatal("running must not heal")
+	}
+
+	notDue := queuedPublished
+	notDue.NotBefore = &future
+	if healingEligible(&notDue, now, age) {
+		t.Fatal("future not_before must not heal")
+	}
+}

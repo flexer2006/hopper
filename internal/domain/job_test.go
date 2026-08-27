@@ -155,12 +155,41 @@ func TestNewJobDefaultsAndRejects(t *testing.T) {
 func TestClaimReleaseAndDeliveryCap(t *testing.T) {
 	t.Parallel()
 
+	t.Run("claim queued", func(t *testing.T) {
+		t.Parallel()
+
+		job := mustQueued(t, 2)
+		if err := job.Claim(); err != nil {
+			t.Fatalf("Claim() err = %v", err)
+		}
+
+		if job.Status != domain.StatusRunning {
+			t.Fatalf("Status = %s, want running", job.Status)
+		}
+
+		if job.DeliveryStarts != 1 || job.AttemptNumber() != 1 {
+			t.Fatalf("starts=%d attempt=%d", job.DeliveryStarts, job.AttemptNumber())
+		}
+	})
+
 	t.Run("claim from running", func(t *testing.T) {
 		t.Parallel()
 
 		job := mustRunning(t, 2)
 		if err := job.Claim(); !errors.Is(err, domain.ErrIllegalTransition) {
 			t.Fatalf("Claim() err = %v, want ErrIllegalTransition", err)
+		}
+	})
+
+	t.Run("claim from terminal", func(t *testing.T) {
+		t.Parallel()
+
+		for _, status := range []domain.Status{domain.StatusSucceeded, domain.StatusDead} {
+			job := mustQueued(t, 2)
+			job.Status = status
+			if err := job.Claim(); !errors.Is(err, domain.ErrIllegalTransition) {
+				t.Fatalf("Claim() from %s err = %v, want ErrIllegalTransition", status, err)
+			}
 		}
 	})
 
@@ -178,6 +207,10 @@ func TestClaimReleaseAndDeliveryCap(t *testing.T) {
 
 		if job.AttemptsDone != 0 {
 			t.Fatalf("AttemptsDone = %d, want 0", job.AttemptsDone)
+		}
+
+		if job.DeliveryStarts != 1 {
+			t.Fatalf("DeliveryStarts = %d, want 1 (release must not reset starts)", job.DeliveryStarts)
 		}
 	})
 
@@ -288,6 +321,22 @@ func TestAssertHTTPAllowed(t *testing.T) {
 		}}
 		if err := job.AssertHTTPAllowed(); !errors.Is(err, domain.ErrSkipHTTP) {
 			t.Fatalf("AssertHTTPAllowed() err = %v, want ErrSkipHTTP", err)
+		}
+	})
+
+	t.Run("skip is cycle scoped", func(t *testing.T) {
+		t.Parallel()
+
+		job := mustRunning(t, 2)
+		job.Attempts = []domain.Attempt{{
+			Cycle:      0,
+			Number:     1,
+			Outcome:    domain.OutcomeSuccess,
+			StatusCode: http.StatusOK,
+		}}
+		job.Cycle = 1
+		if err := job.AssertHTTPAllowed(); err != nil {
+			t.Fatalf("AssertHTTPAllowed() after cycle bump err = %v", err)
 		}
 	})
 
@@ -484,6 +533,39 @@ func TestRecordFailureHTTPRoutes(t *testing.T) {
 		}
 	})
 
+	t.Run("503 then 503 delay 2s", func(t *testing.T) {
+		t.Parallel()
+
+		job := mustRunning(t, 5)
+		first, err := job.RecordFailure(&domain.Attempt{
+			Error:      failureText,
+			StatusCode: http.StatusServiceUnavailable,
+		})
+		if err != nil {
+			t.Fatalf("first RecordFailure() err = %v", err)
+		}
+
+		if first.Queue != "jobs.delay.1s" || first.DelaySeconds != 1 {
+			t.Fatalf("first route=%+v, want 1s delay", first)
+		}
+
+		if claimErr := job.Claim(); claimErr != nil {
+			t.Fatalf("Claim() err = %v", claimErr)
+		}
+
+		second, secondErr := job.RecordFailure(&domain.Attempt{
+			Error:      failureText,
+			StatusCode: http.StatusBadGateway,
+		})
+		if secondErr != nil {
+			t.Fatalf("second RecordFailure() err = %v", secondErr)
+		}
+
+		if second.Queue != "jobs.delay.2s" || second.DelaySeconds != 2 || job.Status != domain.StatusQueued {
+			t.Fatalf("second route=%+v status=%s, want 2s delay", second, job.Status)
+		}
+	})
+
 	t.Run("from queued", func(t *testing.T) {
 		t.Parallel()
 
@@ -582,6 +664,29 @@ func TestRecordFailureHTTPRoutes(t *testing.T) {
 		_, err := job.RecordFailure(&domain.Attempt{Error: failureText, StatusCode: 99})
 		if !errors.Is(err, domain.ErrInvalidHTTPStatus) {
 			t.Fatalf("RecordFailure() err = %v, want ErrInvalidHTTPStatus", err)
+		}
+	})
+
+	t.Run("local ssrf dead", func(t *testing.T) {
+		t.Parallel()
+
+		job := mustRunning(t, 5)
+		class, classErr := domain.ClassifyLocal(domain.LocalSSRF)
+		if classErr != nil {
+			t.Fatalf("ClassifyLocal() err = %v", classErr)
+		}
+
+		route, err := job.RecordFailure(&domain.Attempt{Error: failureText, FailureClass: class})
+		if err != nil {
+			t.Fatalf("RecordFailure() err = %v", err)
+		}
+
+		if route.Queue != domain.QueueDLQ || route.Status != domain.StatusDead || job.Status != domain.StatusDead {
+			t.Fatalf("route=%+v status=%s, want dlq/dead", route, job.Status)
+		}
+
+		if job.Attempts[0].FailureClass != domain.ClassNonRetryableLocal {
+			t.Fatalf("class = %s, want non_retryable_local", job.Attempts[0].FailureClass)
 		}
 	})
 

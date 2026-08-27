@@ -61,6 +61,10 @@ type staticCheck struct {
 	name string
 }
 
+type errReplayStore struct {
+	err error
+}
+
 const (
 	testTarget = "https://example.invalid/webhook"
 	createJSON = `{"type":"http_post","target":"https://example.invalid/webhook","payload":{"n":1}}`
@@ -133,6 +137,10 @@ func newFixture(t *testing.T) apiFixture {
 func (s staticCheck) Name() string { return s.name }
 
 func (s staticCheck) Check(context.Context) error { return s.err }
+
+func (s errReplayStore) Replay(context.Context, replay.Request) (replay.Result, error) {
+	return replay.Result{}, s.err
+}
 
 func doReq(t *testing.T, h http.Handler, method, path, token, key, body string) *http.Response {
 	t.Helper()
@@ -586,6 +594,216 @@ func TestReplayDeadAndConflict(t *testing.T) {
 	}
 }
 
+func TestReplayNotFound404(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs/aaaaaaaaaaaaaaaaaaaaaaaa/replay", platform.ValidToken(), "", "")
+	got := decodeErr(t, res)
+	if res.StatusCode != http.StatusNotFound || got.Code != "not_found" {
+		t.Fatalf("missing replay status=%d body=%+v", res.StatusCode, got)
+	}
+}
+
+func TestReplayInvalidID400(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs/ZZZ/replay", platform.ValidToken(), "", "")
+	got := decodeErr(t, res)
+	if res.StatusCode != http.StatusBadRequest || got.Code != "validation_failed" {
+		t.Fatalf("bad replay id status=%d body=%+v", res.StatusCode, got)
+	}
+}
+
+func TestReplayStoreError503(t *testing.T) {
+	t.Parallel()
+
+	h := httpapi.New(httpapi.Options{
+		Replay:         replay.NewService(errReplayStore{err: errors.New("mongo")}, nil),
+		Token:          platform.ValidToken(),
+		RateLimitRPM:   10,
+		RateLimitBurst: 10,
+	})
+
+	res := doReq(t, h, http.MethodPost, "/v1/jobs/aaaaaaaaaaaaaaaaaaaaaaaa/replay", platform.ValidToken(), "", "")
+	got := decodeErr(t, res)
+	if res.StatusCode != http.StatusServiceUnavailable || got.Code != "service_unavailable" {
+		t.Fatalf("replay store err status=%d body=%+v", res.StatusCode, got)
+	}
+}
+
+func TestReplayConfirmFail503(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
+	var body idBody
+
+	err := json.NewDecoder(created.Body).Decode(&body)
+	closeBody(t, created)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		ID:           body.ID,
+		FenceToken:   out.FenceToken,
+		Status:       domain.StatusDead,
+		AttemptsDone: 1,
+		Cycle:        out.Cycle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fx.pub.err = errors.New("nack")
+
+	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+body.ID+"/replay", platform.ValidToken(), "", "")
+	got := decodeErr(t, res)
+	if res.StatusCode != http.StatusServiceUnavailable || got.Code != "service_unavailable" || got.ID != body.ID {
+		t.Fatalf("replay confirm fail status=%d body=%+v", res.StatusCode, got)
+	}
+}
+
+func TestReplayCapConflict409(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
+	var body idBody
+
+	err := json.NewDecoder(created.Body).Decode(&body)
+	closeBody(t, created)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for range domain.ReplayCap {
+		out, claimErr := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
+		if claimErr != nil {
+			t.Fatalf("Claim() err = %v", claimErr)
+		}
+
+		deadErr := fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+			ID:           body.ID,
+			FenceToken:   out.FenceToken,
+			Status:       domain.StatusDead,
+			AttemptsDone: 1,
+			Cycle:        out.Cycle,
+		})
+		if deadErr != nil {
+			t.Fatalf("dead err = %v", deadErr)
+		}
+
+		_, replayErr := fx.st.Replay(t.Context(), replay.Request{ID: body.ID, By: "ops"})
+		if replayErr != nil {
+			t.Fatalf("Replay() err = %v", replayErr)
+		}
+	}
+
+	out, err := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		ID:           body.ID,
+		FenceToken:   out.FenceToken,
+		Status:       domain.StatusDead,
+		AttemptsDone: 1,
+		Cycle:        domain.ReplayCap,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+body.ID+"/replay", platform.ValidToken(), "", "")
+	got := decodeErr(t, res)
+	if res.StatusCode != http.StatusConflict || got.Code != "conflict" {
+		t.Fatalf("replay cap status=%d body=%+v (AT-UC05-03)", res.StatusCode, got)
+	}
+}
+
+func TestGetJobIncludesReplayHistory(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
+	var body idBody
+
+	err := json.NewDecoder(created.Body).Decode(&body)
+	closeBody(t, created)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		ID:           body.ID,
+		FenceToken:   out.FenceToken,
+		Status:       domain.StatusDead,
+		AttemptsDone: 1,
+		Cycle:        out.Cycle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	replayed := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+body.ID+"/replay", platform.ValidToken(), "", "")
+	closeBody(t, replayed)
+	if replayed.StatusCode != http.StatusAccepted {
+		t.Fatalf("replay status = %d", replayed.StatusCode)
+	}
+
+	got := doReq(t, fx.h, http.MethodGet, "/v1/jobs/"+body.ID, platform.ValidToken(), "", "")
+	defer closeBody(t, got)
+
+	raw, err := io.ReadAll(got.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.StatusCode != http.StatusOK {
+		t.Fatalf("get status = %d body=%s", got.StatusCode, raw)
+	}
+
+	if bytes.Contains(raw, []byte("fence_token")) || bytes.Contains(raw, []byte("dispatch")) {
+		t.Fatalf("leaked internals: %s", raw)
+	}
+
+	var view struct {
+		ReplayHistory []struct {
+			FromCycle int `json:"from_cycle"`
+			ToCycle   int `json:"to_cycle"`
+		} `json:"replay_history"`
+		Status string `json:"status"`
+		Cycle  int    `json:"cycle"`
+	}
+
+	err = json.Unmarshal(raw, &view)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if view.Status != string(domain.StatusQueued) || view.Cycle != 1 {
+		t.Fatalf("view = %+v", view)
+	}
+
+	if len(view.ReplayHistory) != 1 || view.ReplayHistory[0].FromCycle != 0 || view.ReplayHistory[0].ToCycle != 1 {
+		t.Fatalf("replay_history = %+v", view.ReplayHistory)
+	}
+}
+
 func TestHealthzUnauthenticated(t *testing.T) {
 	t.Parallel()
 
@@ -616,6 +834,105 @@ func TestHealthzUnauthenticated(t *testing.T) {
 
 	if res2.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("missing checkers status = %d", res2.StatusCode)
+	}
+}
+
+func TestHealthzPartialDown503(t *testing.T) {
+	t.Parallel()
+
+	h := httpapi.New(httpapi.Options{
+		Token:          platform.ValidToken(),
+		RateLimitRPM:   10,
+		RateLimitBurst: 10,
+		Checks: []httpapi.Checker{
+			staticCheck{name: "mongo"},
+			staticCheck{name: "amqp", err: errors.New("broker down")},
+		},
+	})
+
+	res := doReq(t, h, http.MethodGet, "/healthz", "", "", "")
+	defer closeBody(t, res)
+
+	raw, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("partial down status = %d body=%s", res.StatusCode, raw)
+	}
+
+	var body struct {
+		Checks map[string]string `json:"checks"`
+		Status string            `json:"status"`
+	}
+
+	err = json.Unmarshal(raw, &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if body.Status == "ok" || body.Checks["amqp"] != "down" || body.Checks["mongo"] != "up" {
+		t.Fatalf("health = %+v (AT-UC11-02)", body)
+	}
+}
+
+func TestCreateJobPayloadTooLargeUnderBodyCap(t *testing.T) {
+	t.Parallel()
+
+	clk := &frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
+	st := persist.NewMemory(clk.now, 30*time.Second)
+	rel := dispatch.NewRelay(st, new(recBroker), dispatch.Config{
+		Interval: time.Hour,
+		Healing:  30 * time.Second,
+		Limit:    8,
+	}, nil)
+	h := httpapi.New(httpapi.Options{
+		Now:             clk.now,
+		Enqueue:         enqueue.NewService(st, rel),
+		Query:           query.NewService(st),
+		Token:           platform.ValidToken(),
+		MaxRequestBytes: 4096,
+		MaxPayloadBytes: 32,
+		JSONMaxDepth:    8,
+		RateLimitRPM:    1000,
+		RateLimitBurst:  100,
+	})
+
+	body := `{"type":"http_post","target":"https://example.invalid/webhook","payload":{"n":"` +
+		strings.Repeat("x", 40) + `"}}`
+	res := doReq(t, h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, body)
+	got := decodeErr(t, res)
+	if res.StatusCode != http.StatusRequestEntityTooLarge || got.Code != "payload_too_large" {
+		t.Fatalf("payload cap status=%d body=%+v", res.StatusCode, got)
+	}
+}
+
+func TestCreateJobBodyTooLarge413(t *testing.T) {
+	t.Parallel()
+
+	clk := &frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
+	st := persist.NewMemory(clk.now, 30*time.Second)
+	rel := dispatch.NewRelay(st, new(recBroker), dispatch.Config{
+		Interval: time.Hour,
+		Healing:  30 * time.Second,
+		Limit:    8,
+	}, nil)
+	h := httpapi.New(httpapi.Options{
+		Now:             clk.now,
+		Enqueue:         enqueue.NewService(st, rel),
+		Token:           platform.ValidToken(),
+		MaxRequestBytes: 64,
+		MaxPayloadBytes: 256,
+		JSONMaxDepth:    8,
+		RateLimitRPM:    1000,
+		RateLimitBurst:  100,
+	})
+
+	res := doReq(t, h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
+	got := decodeErr(t, res)
+	if res.StatusCode != http.StatusRequestEntityTooLarge || got.Code != "payload_too_large" {
+		t.Fatalf("body cap status=%d body=%+v (AT-UC10-03)", res.StatusCode, got)
 	}
 }
 

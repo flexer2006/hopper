@@ -84,6 +84,23 @@ func TestOutboundIdempotencyKey(t *testing.T) {
 	if key != "hopper/job-1/0/1" {
 		t.Fatalf("claim key = %q", key)
 	}
+
+	_, err := job.RecordFailure(&domain.Attempt{
+		Error:      "delivery failed",
+		StatusCode: http.StatusBadGateway,
+	})
+	if err != nil {
+		t.Fatalf("RecordFailure() err = %v", err)
+	}
+
+	if claimErr := job.Claim(); claimErr != nil {
+		t.Fatalf("Claim() err = %v", claimErr)
+	}
+
+	next := domain.OutboundIdempotencyKey(job.ID, job.Cycle, job.AttemptNumber())
+	if next != "hopper/job-1/0/2" {
+		t.Fatalf("retry key = %q, want hopper/job-1/0/2 (AT-IDEM-07)", next)
+	}
 }
 
 func TestAttemptValidate(t *testing.T) {

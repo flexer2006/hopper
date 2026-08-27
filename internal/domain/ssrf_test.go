@@ -40,6 +40,24 @@ func TestAdmitTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	got, err := domain.AdmitTarget("http://8.8.8.8/hook")
+	if err != nil {
+		t.Fatalf("public IP AdmitTarget() err = %v", err)
+	}
+
+	if got == nil || got.Hostname() != "8.8.8.8" {
+		t.Fatalf("public IP host = %v", got)
+	}
+
+	mapped, err := domain.AdmitTarget("http://[::ffff:8.8.8.8]/hook")
+	if err != nil {
+		t.Fatalf("mapped public IP AdmitTarget() err = %v", err)
+	}
+
+	if mapped == nil || mapped.Hostname() == "" {
+		t.Fatal("mapped public IP rejected")
+	}
+
 	_, err = domain.AdmitTarget("http://127.0.0.1/")
 	if !errors.Is(err, domain.ErrInvalidTarget) {
 		t.Fatalf("loopback err = %v", err)

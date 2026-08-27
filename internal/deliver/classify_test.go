@@ -42,6 +42,11 @@ func TestClassifyPostSuccessAndTerminal(t *testing.T) {
 	if class != domain.ClassRetryable {
 		t.Fatalf("429 class = %s", class)
 	}
+
+	kind, class, detail = deliver.ClassifyPost(deliver.HTTPResult{StatusCode: 0}, nil)
+	if kind != domain.OutcomeFailure || class != domain.ClassRetryable || detail == "" {
+		t.Fatalf("invalid status = %s %s %q", kind, class, detail)
+	}
 }
 
 func TestClassifyLocalSentinels(t *testing.T) {

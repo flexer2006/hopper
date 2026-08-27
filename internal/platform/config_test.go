@@ -200,6 +200,14 @@ func TestLoadFileTimeouts(t *testing.T) {
 	if cfg.WorkerShutdownTimeout != 11*time.Second {
 		t.Fatalf("WorkerShutdownTimeout = %s, want 11s", cfg.WorkerShutdownTimeout)
 	}
+
+	if platform.APIStopTimeout(&cfg) != 7*time.Second {
+		t.Fatalf("APIStopTimeout() = %s, want 7s", platform.APIStopTimeout(&cfg))
+	}
+
+	if platform.WorkerStopTimeout(&cfg) != 11*time.Second {
+		t.Fatalf("WorkerStopTimeout() = %s, want 11s", platform.WorkerStopTimeout(&cfg))
+	}
 }
 
 func TestLoadTimeoutEnvOverlay(t *testing.T) {

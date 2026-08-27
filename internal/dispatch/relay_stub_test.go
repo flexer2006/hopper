@@ -172,3 +172,29 @@ func TestRelayNotDueRetryDoesNotPublish(t *testing.T) {
 		t.Fatalf("not-due retry published n=%d", pub.last().n)
 	}
 }
+
+func TestRelayHealSkipsStaleGeneration(t *testing.T) {
+	t.Parallel()
+
+	item := dispatch.Intent{
+		ID:         testJobID,
+		Queue:      "jobs",
+		Kind:       dispatch.IntentEnqueue,
+		Generation: 2,
+	}
+
+	pub := new(recPub)
+	rel := dispatch.NewRelay(&stubJobs{
+		healing: []dispatch.Intent{item},
+		healErr: dispatch.ErrStaleGeneration,
+	}, pub, dispatch.Config{Limit: 8}, zap.NewNop())
+
+	err := rel.Tick(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if pub.last().n != 0 {
+		t.Fatalf("stale heal published n=%d", pub.last().n)
+	}
+}

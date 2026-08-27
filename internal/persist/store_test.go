@@ -2,6 +2,7 @@ package persist_test
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -777,5 +778,149 @@ func TestListDead(t *testing.T) {
 	items, err = st.ListDead(t.Context(), 0)
 	if err != nil || len(items) != 1 || items[0].ID != testJobID || items[0].Status != domain.StatusDead {
 		t.Fatalf("list dead = %+v %v", items, err)
+	}
+}
+
+func TestListDeadOrderAndClamp(t *testing.T) {
+	t.Parallel()
+
+	clk := newClock(t)
+	st := newStore(t, clk, 30*time.Second)
+	n := query.DefaultListLimit + 1
+	newest := ""
+
+	for i := range n {
+		id := fmt.Sprintf("%024x", i+1)
+		mustInsert(t, st, testRecord(id, fmt.Sprintf("idem-%d", i), 1))
+
+		out, err := st.Claim(t.Context(), deliver.ClaimIn{ID: id, WorkerID: testWorker})
+		if err != nil {
+			t.Fatalf("Claim(%s) err = %v", id, err)
+		}
+
+		err = st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+			ID:           id,
+			FenceToken:   out.FenceToken,
+			Status:       domain.StatusDead,
+			AttemptsDone: 1,
+			Cycle:        out.Cycle,
+		})
+		if err != nil {
+			t.Fatalf("dead %s err = %v", id, err)
+		}
+
+		newest = id
+		clk.add(time.Second)
+	}
+
+	items, err := st.ListDead(t.Context(), 100)
+	if err != nil || len(items) != query.DefaultListLimit {
+		t.Fatalf("ListDead(100) len=%d err=%v, want %d (AT-LIST-01)", len(items), err, query.DefaultListLimit)
+	}
+
+	if items[0].ID != newest || items[0].Status != domain.StatusDead {
+		t.Fatalf("newest = %+v, want %s", items[0], newest)
+	}
+
+	if len(items[0].Payload) != 0 {
+		t.Fatalf("summary leaked payload: %s", items[0].Payload)
+	}
+
+	oldest := fmt.Sprintf("%024x", 1)
+	for _, item := range items {
+		if item.ID == oldest {
+			t.Fatal("oldest dead job survived clamp")
+		}
+	}
+
+	one, err := st.ListDead(t.Context(), 1)
+	if err != nil || len(one) != 1 || one[0].ID != newest {
+		t.Fatalf("ListDead(1) = %+v err=%v", one, err)
+	}
+}
+
+func TestReplayResetsCountersAndHistory(t *testing.T) {
+	t.Parallel()
+
+	st := newStore(t, nil, 30*time.Second)
+	mustInsert(t, st, testRecord(testJobID, testKey, 5))
+	out := mustClaim(t, st)
+
+	err := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		Attempts: []domain.Attempt{{
+			At:         time.Now().UTC(),
+			Error:      "gone",
+			Outcome:    domain.OutcomeFailure,
+			Cycle:      0,
+			Number:     1,
+			DurationMS: 2,
+			StatusCode: 404,
+		}},
+		ID:           testJobID,
+		FenceToken:   out.FenceToken,
+		Status:       domain.StatusDead,
+		AttemptsDone: 1,
+		Cycle:        out.Cycle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = st.Replay(t.Context(), replay.Request{ID: testJobID, By: "ops"})
+	if err != nil {
+		t.Fatalf("Replay() err = %v", err)
+	}
+
+	got, err := st.Get(t.Context(), testJobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Status != domain.StatusQueued || got.Cycle != 1 || got.AttemptsDone != 0 || got.ReplayCount != 1 {
+		t.Fatalf("after replay Get() = %+v", got)
+	}
+
+	if len(got.Attempts) != 1 {
+		t.Fatalf("attempts len = %d, want 1 (retain journal)", len(got.Attempts))
+	}
+
+	if len(got.ReplayHistory) != 1 || got.ReplayHistory[0].FromCycle != 0 || got.ReplayHistory[0].ToCycle != 1 ||
+		got.ReplayHistory[0].By != "ops" {
+		t.Fatalf("replay_history = %+v", got.ReplayHistory)
+	}
+
+	existing, err := st.ByProducerKey(t.Context(), testKey)
+	if err != nil || existing.DispatchStatus != "pending" || existing.Kind != "enqueue" ||
+		existing.Queue != "jobs" || existing.Generation != 3 {
+		t.Fatalf("ByProducerKey() = %+v err=%v", existing, err)
+	}
+
+	if _, err = st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker}); err != nil {
+		t.Fatalf("Claim() after replay err = %v", err)
+	}
+}
+
+func TestDeadOutcomeForcesDLQQueue(t *testing.T) {
+	t.Parallel()
+
+	st := newStore(t, nil, 30*time.Second)
+	mustInsert(t, st, testRecord(testJobID, testKey, 5))
+	out := mustClaim(t, st)
+
+	err := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		ID:           testJobID,
+		FenceToken:   out.FenceToken,
+		Status:       domain.StatusDead,
+		AttemptsDone: 1,
+		Cycle:        out.Cycle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	existing, err := st.ByProducerKey(t.Context(), testKey)
+	if err != nil || existing.Kind != "dlq" || existing.Queue != domain.QueueDLQ ||
+		existing.DispatchStatus != "pending" {
+		t.Fatalf("dead dispatch = %+v err=%v", existing, err)
 	}
 }

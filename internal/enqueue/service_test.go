@@ -22,6 +22,7 @@ type stubPub struct {
 }
 
 type recIntents struct {
+	err error
 	mu  sync.Mutex
 	got []dispatch.Intent
 }
@@ -40,7 +41,7 @@ func (p *recIntents) Publish(_ context.Context, in dispatch.Intent) error {
 
 	p.got = append(p.got, in)
 
-	return nil
+	return p.err
 }
 
 func (p *recIntents) count() int {
@@ -198,5 +199,65 @@ func TestEnqueueDuplicatePendingRetryDoesNotPublishJobs(t *testing.T) {
 
 	if pub.count() != before {
 		t.Fatalf("pending retry published n=%d before=%d", pub.count(), before)
+	}
+}
+
+func TestEnqueuePendingConfirmRetryAfterFail(t *testing.T) {
+	t.Parallel()
+
+	st := persist.NewMemory(func() time.Time {
+		return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	}, time.Second)
+	pub := &recIntents{err: errors.New("nack")}
+	svc := enqueue.NewService(st, pub)
+
+	first, err := svc.Enqueue(t.Context(), rec("k1", strings.Repeat("a", 64), "https://example.invalid/h"))
+	if err != nil || first.Accepted || first.ID == "" {
+		t.Fatalf("first out=%+v err=%v", first, err)
+	}
+
+	if pub.count() != 1 {
+		t.Fatalf("failed confirm publishes = %d", pub.count())
+	}
+
+	pub.err = nil
+
+	again, err := svc.Enqueue(t.Context(), rec("k1", strings.Repeat("a", 64), "https://example.invalid/h"))
+	if err != nil || !again.Accepted || again.ID != first.ID {
+		t.Fatalf("retry out=%+v err=%v", again, err)
+	}
+
+	if pub.count() != 2 {
+		t.Fatalf("re-confirm publishes = %d, want 2", pub.count())
+	}
+}
+
+func TestEnqueuePublishedShortCircuit(t *testing.T) {
+	t.Parallel()
+
+	st := persist.NewMemory(func() time.Time {
+		return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	}, time.Second)
+	pub := new(recIntents)
+	svc := enqueue.NewService(st, pub)
+
+	first, err := svc.Enqueue(t.Context(), rec("k1", strings.Repeat("a", 64), "https://example.invalid/h"))
+	if err != nil || !first.Accepted {
+		t.Fatalf("first out=%+v err=%v", first, err)
+	}
+
+	err = st.MarkPublished(t.Context(), first.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := pub.count()
+	again, err := svc.Enqueue(t.Context(), rec("k1", strings.Repeat("a", 64), "https://example.invalid/h"))
+	if err != nil || !again.Accepted || again.ID != first.ID {
+		t.Fatalf("published retry out=%+v err=%v", again, err)
+	}
+
+	if pub.count() != before {
+		t.Fatalf("published short-circuit published n=%d before=%d", pub.count(), before)
 	}
 }

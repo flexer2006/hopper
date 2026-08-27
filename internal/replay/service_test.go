@@ -76,6 +76,73 @@ func TestReplayDeadConfirm(t *testing.T) {
 	}
 }
 
+func TestReplayCap(t *testing.T) {
+	t.Parallel()
+
+	st := persist.NewMemory(func() time.Time {
+		return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	}, 30*time.Second)
+	svc := replay.NewService(st, stubPub{})
+	const id = "aaaaaaaaaaaaaaaaaaaaaaaa"
+
+	err := st.Insert(t.Context(), enqueue.Record{
+		Payload:     []byte(`{"n":1}`),
+		ID:          id,
+		Target:      "https://example.invalid/h",
+		ProducerKey: "k",
+		RequestHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Type:        domain.TypeHTTPPost,
+		MaxAttempts: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for range domain.ReplayCap {
+		out, claimErr := st.Claim(t.Context(), deliver.ClaimIn{ID: id, WorkerID: "w"})
+		if claimErr != nil {
+			t.Fatal(claimErr)
+		}
+
+		deadErr := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+			ID:           id,
+			FenceToken:   out.FenceToken,
+			Status:       domain.StatusDead,
+			AttemptsDone: 1,
+			Cycle:        out.Cycle,
+		})
+		if deadErr != nil {
+			t.Fatal(deadErr)
+		}
+
+		_, replayErr := svc.Replay(t.Context(), replay.Request{ID: id, By: "ops"})
+		if replayErr != nil {
+			t.Fatalf("Replay() err = %v", replayErr)
+		}
+	}
+
+	out, err := st.Claim(t.Context(), deliver.ClaimIn{ID: id, WorkerID: "w"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		ID:           id,
+		FenceToken:   out.FenceToken,
+		Status:       domain.StatusDead,
+		AttemptsDone: 1,
+		Cycle:        domain.ReplayCap,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = svc.Replay(t.Context(), replay.Request{ID: id, By: "ops"})
+	if !errors.Is(err, domain.ErrReplayCap) {
+		t.Fatalf("cap err = %v, want ErrReplayCap", err)
+	}
+}
+
 func TestReplayConfirmFailAndInvalid(t *testing.T) {
 	t.Parallel()
 

@@ -392,10 +392,11 @@ func TestPostPublicIPLiteralSkipsLookup(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	var dials atomic.Int32
+	var lookups atomic.Int32
 	ip := fixtureAddr()
 	c := egress.NewHarness(
 		func(context.Context, string) ([]netip.Addr, error) {
-			t.Fatal("lookup must not run for IP literal")
+			lookups.Add(1)
 
 			return nil, errors.New("lookup")
 		},
@@ -410,6 +411,10 @@ func TestPostPublicIPLiteralSkipsLookup(t *testing.T) {
 
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d", res.StatusCode)
+	}
+
+	if lookups.Load() != 0 {
+		t.Fatalf("lookups = %d, IP literal must skip DNS", lookups.Load())
 	}
 
 	if dials.Load() != 1 {

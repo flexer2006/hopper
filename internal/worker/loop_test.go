@@ -519,6 +519,16 @@ func TestProcessSkipHTTPOnTerminalAndNotBefore(t *testing.T) {
 	if http2.n.Load() != 1 || !early.acked.Load() {
 		t.Fatalf("not_before posts=%d acked=%v", http2.n.Load(), early.acked.Load())
 	}
+
+	pending, err := st2.ListPending(t.Context(), 8)
+	if err != nil || len(pending) != 1 || pending[0].Queue != "jobs.delay.1s" {
+		t.Fatalf("early ack mutated pending = %+v err=%v", pending, err)
+	}
+
+	_, err = st2.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: "late"})
+	if !errors.Is(err, persist.ErrNotDue) {
+		t.Fatalf("Claim() after early ack err = %v, want ErrNotDue", err)
+	}
 }
 
 func TestProcessTwoWorkersOneClaim(t *testing.T) {
@@ -562,13 +572,37 @@ func TestProcessAckOnSkipClaims(t *testing.T) {
 	t.Parallel()
 
 	httpStub := &stubHTTP{code: http.StatusOK}
-	for _, err := range []error{deliver.ErrNotRunning, deliver.ErrClaimLost} {
+	for _, err := range []error{
+		deliver.ErrNotRunning,
+		deliver.ErrClaimLost,
+		deliver.ErrLeaseHeld,
+		deliver.ErrNotDue,
+		deliver.ErrTerminal,
+	} {
 		deliv := &memDelivery{body: jobBody(t)}
 		wkr := newWorker(t, skipJobs{err: err}, httpStub, nil, &stubRelay{}, newClock(), "w1")
 		procErr := wkr.Process(t.Context(), deliv)
 		if procErr != nil || !deliv.acked.Load() || httpStub.n.Load() != 0 {
 			t.Fatalf("%v: err=%v acked=%v posts=%d", err, procErr, deliv.acked.Load(), httpStub.n.Load())
 		}
+	}
+}
+
+func TestProcessClaimUnknownErrorDoesNotAck(t *testing.T) {
+	t.Parallel()
+
+	want := errors.New("mongo unavailable")
+	httpStub := &stubHTTP{code: http.StatusOK}
+	deliv := &memDelivery{body: jobBody(t)}
+	wkr := newWorker(t, skipJobs{err: want}, httpStub, nil, &stubRelay{}, newClock(), "w1")
+
+	err := wkr.Process(t.Context(), deliv)
+	if !errors.Is(err, want) {
+		t.Fatalf("Process() err = %v, want mongo unavailable", err)
+	}
+
+	if deliv.acked.Load() || httpStub.n.Load() != 0 {
+		t.Fatalf("unknown claim err acked=%v posts=%d", deliv.acked.Load(), httpStub.n.Load())
 	}
 }
 
@@ -668,6 +702,107 @@ func TestProcessClipsLocalError(t *testing.T) {
 	got := getJob(t, st)
 	if len(got.Attempts) != 1 || len([]rune(got.Attempts[0].Error)) != 1024 {
 		t.Fatalf("error runes = %d want 1024", len([]rune(got.Attempts[0].Error)))
+	}
+}
+
+func TestProcessGhostAuxFailLeavesUnacked(t *testing.T) {
+	t.Parallel()
+
+	clk := newClock()
+	st := newStore(clk)
+	aux := &stubAux{err: errors.New("nack")}
+	httpStub := &stubHTTP{code: http.StatusOK}
+	wkr := newWorker(t, st, httpStub, aux, &stubRelay{}, clk, "w1")
+	deliv := &memDelivery{body: jobBody(t)}
+
+	err := wkr.Process(t.Context(), deliv)
+	if err == nil {
+		t.Fatal("Process() err = nil")
+	}
+
+	if deliv.acked.Load() || httpStub.n.Load() != 0 {
+		t.Fatalf("ghost aux fail acked=%v posts=%d", deliv.acked.Load(), httpStub.n.Load())
+	}
+}
+
+func TestProcessNilAuxiliary(t *testing.T) {
+	t.Parallel()
+
+	deliv := &memDelivery{body: jobBody(t)}
+	wkr := newWorker(t, newStore(newClock()), &stubHTTP{code: http.StatusOK}, nil, &stubRelay{}, newClock(), "w1")
+
+	err := wkr.Process(t.Context(), deliv)
+	if !errors.Is(err, worker.ErrAuxiliary) {
+		t.Fatalf("Process() err = %v, want ErrAuxiliary", err)
+	}
+
+	if deliv.acked.Load() {
+		t.Fatal("acked without auxiliary")
+	}
+}
+
+func TestProcessAckFailAfterSuccessThenRedelivery(t *testing.T) {
+	t.Parallel()
+
+	clk := newClock()
+	st := newStore(clk)
+	mustInsert(t, st, 5)
+	httpStub := &stubHTTP{code: http.StatusOK}
+	wkr := newWorker(t, st, httpStub, nil, &stubRelay{}, clk, "w1")
+	first := &memDelivery{body: jobBody(t), ackErr: errors.New("channel")}
+
+	err := wkr.Process(t.Context(), first)
+	if err == nil || first.acked.Load() {
+		t.Fatalf("ack fail err=%v acked=%v", err, first.acked.Load())
+	}
+
+	if httpStub.n.Load() != 1 {
+		t.Fatalf("posts = %d, want 1", httpStub.n.Load())
+	}
+
+	got := getJob(t, st)
+	if got.Status != domain.StatusSucceeded {
+		t.Fatalf("status = %s, want succeeded", got.Status)
+	}
+
+	second := &memDelivery{body: jobBody(t)}
+	err = wkr.Process(t.Context(), second)
+	if err != nil || !second.acked.Load() {
+		t.Fatalf("redelivery err=%v acked=%v", err, second.acked.Load())
+	}
+
+	if httpStub.n.Load() != 1 {
+		t.Fatalf("second POST after mongo success posts=%d (AT-CRASH-02)", httpStub.n.Load())
+	}
+}
+
+func TestProcessMalformedBodies(t *testing.T) {
+	t.Parallel()
+
+	bodies := [][]byte{
+		{},
+		[]byte(`{"job_id":"aa"}`),
+		[]byte(`{"job_id":"` + testJobID + `"}0`),
+	}
+
+	for _, body := range bodies {
+		aux := &stubAux{}
+		httpStub := &stubHTTP{code: http.StatusOK}
+		wkr := newWorker(t, newStore(newClock()), httpStub, aux, &stubRelay{}, newClock(), "w1")
+		deliv := &memDelivery{body: body}
+
+		err := wkr.Process(t.Context(), deliv)
+		if err != nil || !deliv.acked.Load() || httpStub.n.Load() != 0 || len(aux.bodies) != 1 {
+			t.Fatalf("body=%q err=%v acked=%v posts=%d dlq=%d",
+				body, err, deliv.acked.Load(), httpStub.n.Load(), len(aux.bodies))
+		}
+
+		parsed, parseErr := broker.ParseDLQ(aux.bodies[0])
+		sum := sha256.Sum256(body)
+		if parseErr != nil || parsed.Reason != "malformed_message" || parsed.JobID != "" ||
+			parsed.BodySHA256 != hex.EncodeToString(sum[:]) {
+			t.Fatalf("dlq = %+v err=%v", parsed, parseErr)
+		}
 	}
 }
 

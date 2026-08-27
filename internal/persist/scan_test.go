@@ -83,6 +83,46 @@ func TestListDueHealingAndStartHealing(t *testing.T) {
 	}
 }
 
+func TestListDueHealingSkipsPendingDispatch(t *testing.T) {
+	t.Parallel()
+
+	clk := newClock(t)
+	st := newStore(t, clk, 30*time.Second)
+	mustInsert(t, st, testRecord(testJobID, testKey, 5))
+
+	clk.add(30 * time.Second)
+
+	due, err := st.ListDueHealing(t.Context(), 30*time.Second, 8)
+	if err != nil || len(due) != 0 {
+		t.Fatalf("pending dispatch ListDueHealing = %+v err=%v", due, err)
+	}
+}
+
+func TestStartHealingWrongGenerationWhileEligible(t *testing.T) {
+	t.Parallel()
+
+	clk := newClock(t)
+	st := newStore(t, clk, 30*time.Second)
+	mustInsert(t, st, testRecord(testJobID, testKey, 5))
+
+	err := st.MarkPublished(t.Context(), testJobID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clk.add(30 * time.Second)
+
+	_, err = st.StartHealing(t.Context(), testJobID, 2, 30*time.Second)
+	if !errors.Is(err, dispatch.ErrNotFound) {
+		t.Fatalf("wrong gen heal err = %v, want ErrNotFound", err)
+	}
+
+	next, err := st.StartHealing(t.Context(), testJobID, 1, 30*time.Second)
+	if err != nil || next.Generation != 2 {
+		t.Fatalf("correct gen StartHealing() = %+v err=%v", next, err)
+	}
+}
+
 func TestListPendingClampsLimit(t *testing.T) {
 	t.Parallel()
 

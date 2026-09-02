@@ -5,7 +5,7 @@ go 1.27
 require (
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/rabbitmq/amqp091-go v1.14.0
-	go.mongodb.org/mongo-driver/v2 v2.8.1
+	go.mongodb.org/mongo-driver/v2 v2.8.2
 	go.uber.org/config v1.4.1
 	go.uber.org/fx v1.24.0
 	go.uber.org/goleak v1.3.0
@@ -14,7 +14,7 @@ require (
 )
 
 require (
-	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect

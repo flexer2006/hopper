@@ -56,10 +56,6 @@ Outbound: `Idempotency-Key: hopper/{job_id}/{cycle}/{attempt}`.
 | Broker    | [amqp091-go](https://pkg.go.dev/github.com/rabbitmq/amqp091-go)      |
 | Egress    | [net/http](https://pkg.go.dev/net/http)                              |
 
-## Non-goals
-
-Exactly-once POST · cron · OAuth/mTLS · K8s/Helm · metrics stack · extra job types (MVP) · retention on by default.
-
 ## Flow
 
 ```mermaid

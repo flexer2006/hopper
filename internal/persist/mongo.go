@@ -184,7 +184,16 @@ func (c *mongoColl) listPending(ctx context.Context, limit int) ([]jobDoc, error
 }
 
 func (c *mongoColl) listExpiredLeases(ctx context.Context, limit int) ([]jobDoc, error) {
-	return c.findList(ctx, LeaseScanFilter(), limit)
+	opts := options.Find().
+		SetLimit(int64(limit)).
+		SetProjection(bson.D{{Key: "_id", Value: 1}})
+
+	cur, err := c.coll.Find(ctx, LeaseScanFilter(), opts)
+	if err != nil {
+		return nil, MapDriverError("find", err)
+	}
+
+	return decodeAll(ctx, cur)
 }
 
 func (c *mongoColl) listDueHealing(ctx context.Context, age time.Duration, limit int) ([]jobDoc, error) {

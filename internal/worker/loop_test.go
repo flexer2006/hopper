@@ -96,6 +96,13 @@ func (c *frozenClock) now() time.Time {
 	return c.ts
 }
 
+func (c *frozenClock) add(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.ts = c.ts.Add(d)
+}
+
 func (d *memDelivery) Body() []byte {
 	return d.body
 }
@@ -648,6 +655,48 @@ func TestProcessCommitFailDoesNotAck(t *testing.T) {
 	err := wkr.Process(t.Context(), deliv)
 	if err == nil || deliv.acked.Load() {
 		t.Fatalf("err=%v acked=%v", err, deliv.acked.Load())
+	}
+}
+
+func TestProcessCommitFailThenRecoverDuplicatesPOST(t *testing.T) {
+	t.Parallel()
+
+	clk := newClock()
+	st := persist.NewMemory(clk.now, time.Millisecond)
+	mustInsert(t, st, 5)
+	httpStub := &stubHTTP{code: http.StatusOK}
+	first := &memDelivery{body: jobBody(t)}
+	wkr := worker.New(&failCommit{Store: st}, httpStub, nil, &stubRelay{}, nil, worker.Config{
+		Now:      clk.now,
+		WorkerID: "w1",
+	})
+
+	err := wkr.Process(t.Context(), first)
+	if err == nil || first.acked.Load() {
+		t.Fatalf("err=%v acked=%v", err, first.acked.Load())
+	}
+
+	if httpStub.n.Load() != 1 {
+		t.Fatalf("posts = %d, want 1 before recover", httpStub.n.Load())
+	}
+
+	clk.add(2 * time.Millisecond)
+
+	ok, err := st.RecoverExpiredLease(t.Context(), testJobID)
+	if err != nil || !ok {
+		t.Fatalf("recover ok=%v err=%v", ok, err)
+	}
+
+	second := &memDelivery{body: jobBody(t)}
+	wkr2 := newWorker(t, st, httpStub, nil, &stubRelay{}, clk, "w2")
+
+	err = wkr2.Process(t.Context(), second)
+	if err != nil || !second.acked.Load() {
+		t.Fatalf("redelivery err=%v acked=%v", err, second.acked.Load())
+	}
+
+	if httpStub.n.Load() < 2 {
+		t.Fatalf("AT-CRASH-01 duplicate POST posts=%d, want ≥2", httpStub.n.Load())
 	}
 }
 

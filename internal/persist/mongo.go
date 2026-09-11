@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/flexer2006/hopper/internal/deliver"
+	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/domain"
 )
 
@@ -92,11 +93,24 @@ func (c *mongoColl) outcome(ctx context.Context, in deliver.OutcomeIn) (jobDoc, 
 
 func (c *mongoColl) markPublished(ctx context.Context, id string, generation int) (jobDoc, error) {
 	doc, err := c.findAndUpdate(ctx, MarkPublishedFilter(id, generation), MarkPublishedPipeline())
-	if errors.Is(err, ErrNotFound) {
-		return jobDoc{}, ErrStaleGeneration
+	if err == nil {
+		return doc, nil
 	}
 
-	return doc, err
+	if !errors.Is(err, ErrNotFound) {
+		return jobDoc{}, err
+	}
+
+	existing, findErr := c.byID(ctx, id)
+	if findErr != nil {
+		return jobDoc{}, findErr
+	}
+
+	if existing.Dispatch.Generation == generation && existing.Dispatch.Status == dispatch.StatusPublished {
+		return existing, nil
+	}
+
+	return jobDoc{}, ErrStaleGeneration
 }
 
 func (c *mongoColl) recoverLease(ctx context.Context, id string) (jobDoc, error) {

@@ -25,20 +25,22 @@ type Relayer interface {
 }
 
 type Worker struct {
-	jobs   deliver.Jobs
-	http   deliver.HTTP
-	aux    AuxiliaryDLQ
-	relay  Relayer
-	log    *zap.Logger
-	now    func() time.Time
-	id     string
-	budget time.Duration
+	jobs           deliver.Jobs
+	http           deliver.HTTP
+	aux            AuxiliaryDLQ
+	relay          Relayer
+	log            *zap.Logger
+	now            func() time.Time
+	id             string
+	budget         time.Duration
+	outcomeTimeout time.Duration
 }
 
 type Config struct {
-	Now           func() time.Time
-	WorkerID      string
-	AttemptBudget time.Duration
+	Now            func() time.Time
+	WorkerID       string
+	AttemptBudget  time.Duration
+	OutcomeTimeout time.Duration
 }
 
 const (
@@ -82,6 +84,7 @@ func New(
 	w.now = now
 	w.id = id
 	w.budget = budget
+	w.outcomeTimeout = cfg.OutcomeTimeout
 
 	return w
 }
@@ -218,7 +221,9 @@ func (w *Worker) commit(
 			return "", recErr
 		}
 
-		return "success", w.jobs.CommitOutcome(ctx, successIn(out, &row, job))
+		in := successIn(out, &row, job)
+
+		return "success", w.commitOutcome(ctx, &in)
 	}
 
 	row := domain.Attempt{
@@ -237,7 +242,24 @@ func (w *Worker) commit(
 		return "", recErr
 	}
 
-	return string(row.FailureClass), w.jobs.CommitOutcome(ctx, failIn(out, &row, route, job))
+	in := failIn(out, &row, route, job)
+
+	return string(row.FailureClass), w.commitOutcome(ctx, &in)
+}
+
+func (w *Worker) commitOutcome(ctx context.Context, in *deliver.OutcomeIn) error {
+	if in == nil {
+		return domain.ErrInvalidAttempt
+	}
+
+	if w.outcomeTimeout > 0 {
+		var cancel context.CancelFunc
+
+		ctx, cancel = context.WithTimeout(ctx, w.outcomeTimeout)
+		defer cancel()
+	}
+
+	return w.jobs.CommitOutcome(ctx, *in)
 }
 
 func snapshot(out *deliver.ClaimOut) *domain.Job {

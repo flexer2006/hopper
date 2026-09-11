@@ -18,7 +18,6 @@ const (
 	workAndDLQCount      = 2
 	publishMandatory     = true
 	publishImmediate     = false
-	defaultExchange      = ""
 	ackMultiple          = false
 	nackRequeue          = false
 	argDLX               = "x-dead-letter-exchange"

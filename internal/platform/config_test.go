@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -485,4 +486,165 @@ func TestLoadRejectsZeroJSONDepthEnv(t *testing.T) {
 	if !errors.Is(err, platform.ErrConfig) {
 		t.Fatalf("Load() err = %v, want ErrConfig", err)
 	}
+}
+
+func TestLoadFileAcceptsHopperExampleYAML(t *testing.T) {
+	t.Parallel()
+
+	root := moduleRoot(t)
+	cfg, err := platform.LoadFile(filepath.Join(root, "deploy", "hopper.example.yaml"))
+	if err != nil {
+		t.Fatalf("LoadFile(hopper.example.yaml) = %v", err)
+	}
+
+	if cfg.MongoURI == "" || cfg.AMQPURI == "" || cfg.Prefetch != 1 || cfg.MongoDatabase != "hopper" {
+		t.Fatalf("example yaml infrastructure = uri:%t amqp:%t db=%q prefetch=%d",
+			cfg.MongoURI != "", cfg.AMQPURI != "", cfg.MongoDatabase, cfg.Prefetch)
+	}
+
+	if cfg.ClaimLease != platform.DefaultClaimLease || cfg.HTTPTimeout != platform.DefaultHTTPTimeout ||
+		cfg.PublishConfirmTimeout != platform.DefaultPublishConfirmTimeout ||
+		cfg.MaxResponseBytes != platform.DefaultMaxResponseBytes || cfg.ReplayMax != platform.DefaultReplayMax {
+		t.Fatalf("example yaml knobs = lease=%s http=%s confirm=%s maxBody=%d replay=%d",
+			cfg.ClaimLease, cfg.HTTPTimeout, cfg.PublishConfirmTimeout, cfg.MaxResponseBytes, cfg.ReplayMax)
+	}
+}
+
+func TestLoadFileRejectsUnknownKey(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) + "not_a_hopper_key: 1\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := platform.LoadFile(path)
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("LoadFile(unknown key) err = %v, want ErrConfig", err)
+	}
+}
+
+func TestLoadFileRejectsRetentionEnabled(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) + "retention_enabled: true\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := platform.LoadFile(path)
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("LoadFile(retention_enabled) err = %v, want ErrConfig", err)
+	}
+}
+
+func TestLoadFileRejectsClaimLeaseBelowFR46(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) + "claim_lease: 10s\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := platform.LoadFile(path)
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("LoadFile(short claim_lease) err = %v, want ErrConfig", err)
+	}
+}
+
+func TestLoadFileRejectsZeroReplayMax(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) + "replay_max: 0\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := platform.LoadFile(path)
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("LoadFile(replay_max: 0) err = %v, want ErrConfig", err)
+	}
+}
+
+func TestLoadFileRejectsWrongQueueName(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) + "queue_jobs: other\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := platform.LoadFile(path)
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("LoadFile(queue_jobs) err = %v, want ErrConfig", err)
+	}
+}
+
+func TestLoadFileAppliesWorkerKnobs(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) +
+		"claim_lease: 40s\n" +
+		"http_timeout: 12s\n" +
+		"mongo_outcome_timeout: 6s\n" +
+		"publish_confirm_timeout: 7s\n" +
+		"max_response_bytes: 2048\n" +
+		"worker_id: hopper-a\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := platform.LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.ClaimLease != 40*time.Second || cfg.HTTPTimeout != 12*time.Second ||
+		cfg.MongoOutcomeTimeout != 6*time.Second || cfg.PublishConfirmTimeout != 7*time.Second ||
+		cfg.MaxResponseBytes != 2048 || cfg.WorkerID != "hopper-a" {
+		t.Fatalf("worker knobs = %+v", cfg)
+	}
+
+	if cfg.AttemptBudget() != 12*time.Second+6*time.Second+7*time.Second+5*time.Second {
+		t.Fatalf("AttemptBudget() = %s", cfg.AttemptBudget())
+	}
+}
+
+func moduleRoot(t *testing.T) string {
+	t.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller")
+	}
+
+	dir := filepath.Dir(file)
+	for range 8 {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+
+		dir = parent
+	}
+
+	t.Fatal("go.mod not found")
+
+	return ""
 }

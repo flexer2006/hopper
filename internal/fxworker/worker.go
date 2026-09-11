@@ -14,6 +14,7 @@ import (
 	"github.com/flexer2006/hopper/internal/deliver"
 	"github.com/flexer2006/hopper/internal/egress"
 	"github.com/flexer2006/hopper/internal/persist"
+	"github.com/flexer2006/hopper/internal/platform"
 	"github.com/flexer2006/hopper/internal/worker"
 )
 
@@ -28,6 +29,7 @@ type workerLife struct {
 	Shutdowner fx.Shutdowner
 	Log        *zap.Logger
 	Holder     *relayHolder
+	Cfg        *platform.Config
 	Jobs       deliver.Jobs      `optional:"true"`
 	Client     deliver.HTTP      `optional:"true"`
 	Pub        *broker.Publisher `optional:"true"`
@@ -42,8 +44,21 @@ const (
 	attemptBudget  = 25 * time.Second
 )
 
-func newHTTP() deliver.HTTP { //nolint:ireturn // fx provides the consumer-owned HTTP port
-	return egress.New()
+func newHTTP(cfg *platform.Config) deliver.HTTP { //nolint:ireturn // fx provides the consumer-owned HTTP port
+	timeout := httpTimeout
+	maxBody := int64(platform.DefaultMaxResponseBytes)
+
+	if cfg != nil {
+		if cfg.HTTPTimeout > 0 {
+			timeout = cfg.HTTPTimeout
+		}
+
+		if cfg.MaxResponseBytes > 0 {
+			maxBody = int64(cfg.MaxResponseBytes)
+		}
+	}
+
+	return egress.NewWithLimits(timeout, maxBody)
 }
 
 func (a *auxDLQ) Publish(ctx context.Context, body []byte) error {
@@ -55,7 +70,21 @@ func (a *auxDLQ) Publish(ctx context.Context, body []byte) error {
 }
 
 func startWorker(in workerLife) error { //nolint:gocritic // hugeParam: fx.In composition
-	err := persist.CheckLeaseBudget(claimLease, httpTimeout, outcomeTimeout, confirmTimeout)
+	lease, httpWait, outcomeWait, confirmWait := claimLease, httpTimeout, outcomeTimeout, confirmTimeout
+	budget := attemptBudget
+	id := workerID("")
+
+	if in.Cfg != nil {
+		in.Cfg.FillRuntimeDefaults()
+		lease = in.Cfg.ClaimLease
+		httpWait = in.Cfg.HTTPTimeout
+		outcomeWait = in.Cfg.MongoOutcomeTimeout
+		confirmWait = in.Cfg.PublishConfirmTimeout
+		budget = in.Cfg.AttemptBudget()
+		id = workerID(in.Cfg.WorkerID)
+	}
+
+	err := persist.CheckLeaseBudget(lease, httpWait, outcomeWait, confirmWait)
 	if err != nil {
 		return fmt.Errorf("fr-46 lease budget: %w", err)
 	}
@@ -78,8 +107,12 @@ func startWorker(in workerLife) error { //nolint:gocritic // hugeParam: fx.In co
 	}
 
 	cfg := new(worker.Config)
-	cfg.WorkerID = workerID()
-	cfg.AttemptBudget = attemptBudget
+	cfg.WorkerID = id
+	cfg.AttemptBudget = budget
+
+	if in.Cfg != nil {
+		cfg.OutcomeTimeout = in.Cfg.MongoOutcomeTimeout
+	}
 
 	loop := worker.New(in.Jobs, in.Client, aux, relay, in.Log, *cfg)
 
@@ -129,12 +162,17 @@ func failFastConsume(log *zap.Logger, shutdowner fx.Shutdowner, runErr error) {
 	}
 }
 
-func workerID() string {
+func workerID(configured string) string {
 	const maxWorkerID = 128
 
-	name, err := os.Hostname()
-	if err != nil || name == "" {
-		return "worker"
+	name := configured
+	if name == "" {
+		host, err := os.Hostname()
+		if err != nil || host == "" {
+			return "worker"
+		}
+
+		name = host
 	}
 
 	if len(name) > maxWorkerID {

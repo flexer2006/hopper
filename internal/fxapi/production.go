@@ -59,17 +59,35 @@ func bindPorts() fx.Option { //nolint:ireturn // Fx composition contract.
 }
 
 func mongoOptions(cfg *platform.Config) persist.Options {
-	opts := persist.Options{
+	if cfg == nil {
+		return persist.Options{
+			URI:        "",
+			Database:   "",
+			Collection: "",
+			Lease:      platform.DefaultClaimLease,
+		}
+	}
+
+	lease := platform.DefaultClaimLease
+	if cfg.ClaimLease > 0 {
+		lease = cfg.ClaimLease
+	}
+
+	return persist.Options{
 		URI:        cfg.MongoURI,
 		Database:   cfg.MongoDatabase,
 		Collection: cfg.MongoJobsCollection,
-		Lease:      0,
+		Lease:      lease,
 	}
-
-	return opts
 }
 
 func requireInfrastructure(cfg *platform.Config) error {
+	if cfg == nil {
+		return fmt.Errorf("%w: missing config", platform.ErrConfig)
+	}
+
+	cfg.FillRuntimeDefaults()
+
 	err := cfg.ValidateInfrastructure()
 	if err != nil {
 		return err
@@ -82,6 +100,15 @@ func requireInfrastructure(cfg *platform.Config) error {
 	err = broker.ValidateURI(cfg.AMQPURI)
 	if err != nil {
 		return fmt.Errorf("amqp_uri: %w", err)
+	}
+
+	if cfg.ExchangeDelay != "" && cfg.ExchangeDelay != broker.ExchangeDelayDLX {
+		return fmt.Errorf("exchange_delay must be %s: %w", broker.ExchangeDelayDLX, platform.ErrConfig)
+	}
+
+	err = persist.CheckLeaseBudget(cfg.ClaimLease, cfg.HTTPTimeout, cfg.MongoOutcomeTimeout, cfg.PublishConfirmTimeout)
+	if err != nil {
+		return fmt.Errorf("fr-46 lease budget: %w", err)
 	}
 
 	return nil
@@ -112,6 +139,9 @@ func openStore(lc fx.Lifecycle, cfg *platform.Config) *persist.Store {
 
 func openBroker(lc fx.Lifecycle, cfg *platform.Config) *brokerResources {
 	resources := newBrokerResources()
+	if cfg != nil && cfg.PublishConfirmTimeout > 0 {
+		resources.pub = broker.LazyPublisher(resources.channel, cfg.PublishConfirmTimeout)
+	}
 
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {

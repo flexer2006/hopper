@@ -21,9 +21,11 @@ import (
 )
 
 type Client struct {
-	lookup lookupFunc
-	dial   dialFunc
-	roots  *x509.CertPool
+	lookup  lookupFunc
+	dial    dialFunc
+	roots   *x509.CertPool
+	timeout time.Duration
+	maxBody int64
 }
 
 type lookupFunc func(ctx context.Context, host string) ([]netip.Addr, error)
@@ -46,7 +48,15 @@ var (
 )
 
 func New() *Client {
-	return &Client{}
+	return NewWithLimits(0, 0)
+}
+
+func NewWithLimits(timeout time.Duration, maxBody int64) *Client {
+	client := new(Client)
+	client.timeout = timeout
+	client.maxBody = maxBody
+
+	return client
 }
 
 func (c *Client) Post(ctx context.Context, in deliver.HTTPRequest) (deliver.HTTPResult, error) {
@@ -69,7 +79,7 @@ func (c *Client) Post(ctx context.Context, in deliver.HTTPRequest) (deliver.HTTP
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, totalTimeout)
+	ctx, cancel := context.WithTimeout(ctx, c.requestTimeout())
 	defer cancel()
 
 	pin, err := c.resolve(ctx, host, port)
@@ -78,6 +88,22 @@ func (c *Client) Post(ctx context.Context, in deliver.HTTPRequest) (deliver.HTTP
 	}
 
 	return c.roundTrip(ctx, pin, host, parsed, in)
+}
+
+func (c *Client) requestTimeout() time.Duration {
+	if c != nil && c.timeout > 0 {
+		return c.timeout
+	}
+
+	return totalTimeout
+}
+
+func (c *Client) bodyLimit() int64 {
+	if c != nil && c.maxBody > 0 {
+		return c.maxBody
+	}
+
+	return maxBody
 }
 
 func (c *Client) roundTrip(
@@ -107,7 +133,8 @@ func (c *Client) roundTrip(
 		return deliver.HTTPResult{}, fmt.Errorf("egress transport: %w", scrubTransport(err))
 	}
 
-	n, readErr := io.Copy(io.Discard, io.LimitReader(resp.Body, maxBody+1))
+	limit := c.bodyLimit()
+	n, readErr := io.Copy(io.Discard, io.LimitReader(resp.Body, limit+1))
 	closeErr := resp.Body.Close()
 
 	if readErr != nil {
@@ -118,7 +145,7 @@ func (c *Client) roundTrip(
 		return deliver.HTTPResult{}, fmt.Errorf("egress close: %w", closeErr)
 	}
 
-	if n > maxBody {
+	if n > limit {
 		return deliver.HTTPResult{}, ErrBodyLimit
 	}
 
@@ -146,7 +173,7 @@ func (c *Client) transport(pin netip.AddrPort, serverName string) *http.Transpor
 		Protocols:             protos,
 		TLSClientConfig:       cfg,
 		DialContext:           c.pinDial(want),
-		ResponseHeaderTimeout: totalTimeout,
+		ResponseHeaderTimeout: c.requestTimeout(),
 	}
 }
 

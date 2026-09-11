@@ -243,8 +243,8 @@ func TestSuccessOutcomeDoesNotBumpGeneration(t *testing.T) {
 	}
 
 	err = st.MarkPublished(t.Context(), testJobID, 1)
-	if !errors.Is(err, persist.ErrStaleGeneration) {
-		t.Fatalf("MarkPublished(1) already published err = %v", err)
+	if err != nil {
+		t.Fatalf("MarkPublished(1) already published err = %v, want nil", err)
 	}
 }
 

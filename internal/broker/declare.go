@@ -38,12 +38,12 @@ func Declare(channel topologyChannel) error {
 		return err
 	}
 
-	_, err = channel.QueueDeclare(QueueJobs, true, false, false, false, nil)
+	err = declareBoundQueue(channel, QueueJobs, nil)
 	if err != nil {
 		return err
 	}
 
-	_, err = channel.QueueDeclare(domain.QueueDLQ, true, false, false, false, nil)
+	err = declareBoundQueue(channel, domain.QueueDLQ, nil)
 	if err != nil {
 		return err
 	}
@@ -64,13 +64,27 @@ func Declare(channel topologyChannel) error {
 			return delayErr
 		}
 
-		_, err = channel.QueueDeclare(name, true, false, false, false, DelayQueueArgs(seconds))
+		err = declareBoundQueue(channel, name, DelayQueueArgs(seconds))
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func declareBoundQueue(channel topologyChannel, name string, args amqp.Table) error {
+	err := channel.ExchangeDeclare(name, exchangeKindDirect, true, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+
+	_, err = channel.QueueDeclare(name, true, false, false, false, args)
+	if err != nil {
+		return err
+	}
+
+	return channel.QueueBind(name, name, name, false, nil)
 }
 
 func Prepare(pub topologyChannel, sub qosChannel) error {

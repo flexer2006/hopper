@@ -110,7 +110,7 @@ func (pub *Publisher) Publish(ctx context.Context, queue string, body []byte) er
 	waitCtx, cancel := context.WithTimeout(ctx, pub.timeout)
 	defer cancel()
 
-	waiter, err := pub.publish(waitCtx, defaultExchange, queue, msg)
+	waiter, err := pub.publish(waitCtx, queue, queue, msg)
 	if err != nil {
 		return err
 	}

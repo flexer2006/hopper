@@ -85,8 +85,13 @@ func TestMongoOptionsLeaseIsNotScanInterval(t *testing.T) {
 	cfg.LeaseScanInterval = 5 * time.Second
 
 	opts := mongoOptions(cfg)
-	if opts.Lease != 0 {
-		t.Fatalf("Lease = %s, want 0 so persist defaultLease (claim TTL) applies", opts.Lease)
+	if opts.Lease != platform.DefaultClaimLease {
+		t.Fatalf(
+			"Lease = %s, want claim TTL %s (not scan interval %s)",
+			opts.Lease,
+			platform.DefaultClaimLease,
+			cfg.LeaseScanInterval,
+		)
 	}
 
 	if opts.URI != replicaMongoURI || opts.Database != "hopper" || opts.Collection != "jobs" {

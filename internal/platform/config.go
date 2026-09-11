@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"go.uber.org/config"
+
+	"github.com/flexer2006/hopper/internal/domain"
 )
 
 type Config struct {
@@ -36,6 +38,24 @@ type Config struct {
 	MongoJobsCollection       string        `yaml:"mongo_jobs_collection"`
 	Prefetch                  int           `yaml:"-"`
 	PrefetchYAML              *int          `yaml:"prefetch"`
+	WorkerID                  string        `yaml:"worker_id"`
+	HTTPTimeoutYAML           string        `yaml:"http_timeout"`
+	MongoOutcomeTimeoutYAML   string        `yaml:"mongo_outcome_timeout"`
+	PublishConfirmTimeoutYAML string        `yaml:"publish_confirm_timeout"`
+	ClaimLeaseYAML            string        `yaml:"claim_lease"`
+	QueueJobs                 string        `yaml:"queue_jobs"`
+	QueueDLQ                  string        `yaml:"queue_dlq"`
+	ExchangeDelay             string        `yaml:"exchange_delay"`
+	HTTPTimeout               time.Duration `yaml:"-"`
+	MongoOutcomeTimeout       time.Duration `yaml:"-"`
+	PublishConfirmTimeout     time.Duration `yaml:"-"`
+	ClaimLease                time.Duration `yaml:"-"`
+	MaxResponseBytes          int           `yaml:"-"`
+	MaxResponseBytesYAML      *int          `yaml:"max_response_bytes"`
+	ReplayMax                 int           `yaml:"-"`
+	ReplayMaxYAML             *int          `yaml:"replay_max"`
+	RetentionDays             int           `yaml:"retention_days"`
+	RetentionEnabled          bool          `yaml:"retention_enabled"`
 }
 
 const (
@@ -58,18 +78,37 @@ const (
 	MongoDatabaseEnv             = "HOPPER_MONGO_DATABASE"
 	MongoJobsCollectionEnv       = "HOPPER_MONGO_JOBS_COLLECTION"
 	PrefetchEnv                  = "HOPPER_PREFETCH"
+	WorkerIDEnv                  = "HOPPER_WORKER_ID"
+	HTTPTimeoutEnv               = "HOPPER_HTTP_TIMEOUT"
+	MaxResponseBytesEnv          = "HOPPER_MAX_RESPONSE_BYTES"
+	MongoOutcomeTimeoutEnv       = "HOPPER_MONGO_OUTCOME_TIMEOUT"
+	PublishConfirmTimeoutEnv     = "HOPPER_PUBLISH_CONFIRM_TIMEOUT"
+	ClaimLeaseEnv                = "HOPPER_CLAIM_LEASE"
+	QueueJobsEnv                 = "HOPPER_QUEUE_JOBS"
+	QueueDLQEnv                  = "HOPPER_QUEUE_DLQ"
+	ExchangeDelayEnv             = "HOPPER_EXCHANGE_DELAY"
+	RetentionEnabledEnv          = "HOPPER_RETENTION_ENABLED"
+	RetentionDaysEnv             = "HOPPER_RETENTION_DAYS"
+	ReplayMaxEnv                 = "HOPPER_REPLAY_MAX"
 	MinAPITokenBytes             = 32
 	DefaultAPIShutdownTimeout    = 10 * time.Second
 	DefaultWorkerShutdownTimeout = 30 * time.Second
 	DefaultRelayInterval         = 2 * time.Second
 	DefaultHealingInterval       = 30 * time.Second
 	DefaultLeaseScanInterval     = 5 * time.Second
+	DefaultHTTPTimeout           = 10 * time.Second
+	DefaultMongoOutcomeTimeout   = 5 * time.Second
+	DefaultPublishConfirmTimeout = 5 * time.Second
+	DefaultClaimLease            = 30 * time.Second
 	DefaultHTTPAddr              = ":9999"
 	DefaultMaxRequestBytes       = 524288
 	DefaultMaxPayloadBytes       = 262144
+	DefaultMaxResponseBytes      = 1048576
 	DefaultJSONMaxDepth          = 64
 	DefaultRateLimitRPM          = 100
 	DefaultRateLimitBurst        = 20
+	DefaultReplayMax             = 20
+	leaseBudgetMargin            = 5 * time.Second // FR-46; keep equal to persist.leaseMargin
 )
 
 func Load() (Config, error) {
@@ -117,6 +156,56 @@ func (cfg *Config) ValidateInfrastructure() error {
 	}
 
 	return nil
+}
+
+func (cfg *Config) AttemptBudget() time.Duration {
+	return cfg.HTTPTimeout + cfg.MongoOutcomeTimeout + cfg.PublishConfirmTimeout + leaseBudgetMargin
+}
+
+func APIStopTimeout(cfg *Config) time.Duration {
+	return cfg.APIShutdownTimeout
+}
+
+func WorkerStopTimeout(cfg *Config) time.Duration {
+	return cfg.WorkerShutdownTimeout
+}
+
+func (cfg *Config) FillRuntimeDefaults() {
+	if cfg == nil {
+		return
+	}
+
+	if cfg.HTTPTimeout == 0 {
+		cfg.HTTPTimeout = DefaultHTTPTimeout
+	}
+
+	if cfg.MongoOutcomeTimeout == 0 {
+		cfg.MongoOutcomeTimeout = DefaultMongoOutcomeTimeout
+	}
+
+	if cfg.PublishConfirmTimeout == 0 {
+		cfg.PublishConfirmTimeout = DefaultPublishConfirmTimeout
+	}
+
+	if cfg.ClaimLease == 0 {
+		cfg.ClaimLease = DefaultClaimLease
+	}
+
+	if cfg.MaxResponseBytes == 0 {
+		cfg.MaxResponseBytes = DefaultMaxResponseBytes
+	}
+
+	if cfg.ReplayMax == 0 {
+		cfg.ReplayMax = DefaultReplayMax
+	}
+
+	if cfg.QueueJobs == "" {
+		cfg.QueueJobs = domain.QueueJobs
+	}
+
+	if cfg.QueueDLQ == "" {
+		cfg.QueueDLQ = domain.QueueDLQ
+	}
 }
 
 func (cfg *Config) applyTimeouts() error {
@@ -177,6 +266,55 @@ func (cfg *Config) applyTimeouts() error {
 	cfg.HealingInterval = healing
 	cfg.LeaseScanInterval = lease
 
+	return cfg.applyDeliveryTimeouts()
+}
+
+func (cfg *Config) applyDeliveryTimeouts() error {
+	httpTimeout, httpErr := resolveDuration(
+		cfg.HTTPTimeoutYAML,
+		"http_timeout",
+		HTTPTimeoutEnv,
+		DefaultHTTPTimeout,
+	)
+	if httpErr != nil {
+		return httpErr
+	}
+
+	outcomeTimeout, outcomeErr := resolveDuration(
+		cfg.MongoOutcomeTimeoutYAML,
+		"mongo_outcome_timeout",
+		MongoOutcomeTimeoutEnv,
+		DefaultMongoOutcomeTimeout,
+	)
+	if outcomeErr != nil {
+		return outcomeErr
+	}
+
+	confirmTimeout, confirmErr := resolveDuration(
+		cfg.PublishConfirmTimeoutYAML,
+		"publish_confirm_timeout",
+		PublishConfirmTimeoutEnv,
+		DefaultPublishConfirmTimeout,
+	)
+	if confirmErr != nil {
+		return confirmErr
+	}
+
+	claimLease, claimErr := resolveDuration(
+		cfg.ClaimLeaseYAML,
+		"claim_lease",
+		ClaimLeaseEnv,
+		DefaultClaimLease,
+	)
+	if claimErr != nil {
+		return claimErr
+	}
+
+	cfg.HTTPTimeout = httpTimeout
+	cfg.MongoOutcomeTimeout = outcomeTimeout
+	cfg.PublishConfirmTimeout = confirmTimeout
+	cfg.ClaimLease = claimLease
+
 	return cfg.applyHTTP()
 }
 
@@ -236,6 +374,47 @@ func (cfg *Config) applyHTTP() error {
 		return err
 	}
 
+	return cfg.applyDocumentedKnobs()
+}
+
+func (cfg *Config) applyDocumentedKnobs() error {
+	var err error
+
+	cfg.MaxResponseBytes, err = resolvePositive(
+		cfg.MaxResponseBytesYAML,
+		MaxResponseBytesEnv,
+		DefaultMaxResponseBytes,
+		"max_response_bytes",
+	)
+	if err != nil {
+		return err
+	}
+
+	cfg.ReplayMax, err = resolvePositive(
+		cfg.ReplayMaxYAML,
+		ReplayMaxEnv,
+		DefaultReplayMax,
+		"replay_max",
+	)
+	if err != nil {
+		return err
+	}
+
+	cfg.RetentionDays, err = resolveInt(cfg.RetentionDays, RetentionDaysEnv, 0)
+	if err != nil {
+		return err
+	}
+
+	cfg.RetentionEnabled, err = resolveBool(cfg.RetentionEnabled, RetentionEnabledEnv)
+	if err != nil {
+		return err
+	}
+
+	cfg.WorkerID = resolveString(cfg.WorkerID, WorkerIDEnv, "")
+	cfg.QueueJobs = resolveString(cfg.QueueJobs, QueueJobsEnv, domain.QueueJobs)
+	cfg.QueueDLQ = resolveString(cfg.QueueDLQ, QueueDLQEnv, domain.QueueDLQ)
+	cfg.ExchangeDelay = resolveString(cfg.ExchangeDelay, ExchangeDelayEnv, "")
+
 	return nil
 }
 
@@ -262,6 +441,31 @@ func resolvePrefetch(yamlVal int, hasYAML bool) (int, error) {
 	}
 
 	return yamlVal, nil
+}
+
+func resolvePositive(yamlVal *int, envName string, fallback int, yamlKey string) (int, error) {
+	if raw := os.Getenv(envName); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			return 0, fmt.Errorf("%w: parse %s %q: %w", ErrConfig, envName, raw, err)
+		}
+
+		if parsed < 1 {
+			return 0, fmt.Errorf("%w: %s must be >= 1", ErrConfig, envName)
+		}
+
+		return parsed, nil
+	}
+
+	if yamlVal == nil {
+		return fallback, nil
+	}
+
+	if *yamlVal < 1 {
+		return 0, fmt.Errorf("%w: %s must be >= 1", ErrConfig, yamlKey)
+	}
+
+	return *yamlVal, nil
 }
 
 func resolveString(yamlVal, envName, fallback string) string {
@@ -302,6 +506,22 @@ func resolveInt(yamlVal int, envName string, fallback int) (int, error) {
 	return yamlVal, nil
 }
 
+func resolveBool(yamlVal bool, envName string) (bool, error) {
+	raw := os.Getenv(envName)
+	if raw == "" {
+		return yamlVal, nil
+	}
+
+	switch raw {
+	case "true", "1":
+		return true, nil
+	case "false", "0":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%w: parse %s %q", ErrConfig, envName, raw)
+	}
+}
+
 func resolveDuration(yamlRaw, yamlKey, envName string, fallback time.Duration) (time.Duration, error) {
 	raw := yamlRaw
 	source := yamlKey
@@ -328,6 +548,24 @@ func resolveDuration(yamlRaw, yamlKey, envName string, fallback time.Duration) (
 }
 
 func (cfg *Config) validate() error {
+	err := cfg.validateLimits()
+	if err != nil {
+		return err
+	}
+
+	err = cfg.validateTopology()
+	if err != nil {
+		return err
+	}
+
+	if cfg.ClaimLease < cfg.AttemptBudget() {
+		return fmt.Errorf("%w: claim_lease %s below FR-46 budget %s", ErrConfig, cfg.ClaimLease, cfg.AttemptBudget())
+	}
+
+	return nil
+}
+
+func (cfg *Config) validateLimits() error {
 	if len(cfg.APIToken) < MinAPITokenBytes {
 		return ErrAPIToken
 	}
@@ -336,7 +574,7 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("%w: json_max_depth must be >= 1", ErrConfig)
 	}
 
-	if cfg.MaxRequestBytes < 1 || cfg.MaxPayloadBytes < 1 {
+	if cfg.MaxRequestBytes < 1 || cfg.MaxPayloadBytes < 1 || cfg.MaxResponseBytes < 1 {
 		return fmt.Errorf("%w: byte caps must be >= 1", ErrConfig)
 	}
 
@@ -344,21 +582,45 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("%w: rate limit must be >= 1", ErrConfig)
 	}
 
-	if (cfg.MongoURI == "") != (cfg.AMQPURI == "") {
-		return fmt.Errorf("%w: mongo_uri and amqp_uri must be configured together", ErrConfig)
+	if cfg.Prefetch < 1 {
+		return fmt.Errorf("%w: prefetch must be >= 1", ErrConfig)
 	}
 
-	if cfg.MongoDatabase == "" || cfg.MongoJobsCollection == "" || cfg.Prefetch < 1 {
-		return fmt.Errorf("%w: mongo database, collection, and prefetch must be valid", ErrConfig)
+	if cfg.ReplayMax != DefaultReplayMax {
+		return fmt.Errorf(
+			"%w: replay_max must be %d until persist history cap is configurable",
+			ErrConfig,
+			DefaultReplayMax,
+		)
+	}
+
+	if cfg.RetentionEnabled || cfg.RetentionDays != 0 {
+		return fmt.Errorf(
+			"%w: retention is not implemented (keep retention_enabled false and retention_days 0)",
+			ErrConfig,
+		)
 	}
 
 	return nil
 }
 
-func APIStopTimeout(cfg *Config) time.Duration {
-	return cfg.APIShutdownTimeout
-}
+func (cfg *Config) validateTopology() error {
+	if (cfg.MongoURI == "") != (cfg.AMQPURI == "") {
+		return fmt.Errorf("%w: mongo_uri and amqp_uri must be configured together", ErrConfig)
+	}
 
-func WorkerStopTimeout(cfg *Config) time.Duration {
-	return cfg.WorkerShutdownTimeout
+	if cfg.MongoDatabase == "" || cfg.MongoJobsCollection == "" {
+		return fmt.Errorf("%w: mongo database and collection must be set", ErrConfig)
+	}
+
+	if cfg.QueueJobs != domain.QueueJobs || cfg.QueueDLQ != domain.QueueDLQ {
+		return fmt.Errorf(
+			"%w: queue_jobs and queue_dlq must match topology %s/%s",
+			ErrConfig,
+			domain.QueueJobs,
+			domain.QueueDLQ,
+		)
+	}
+
+	return nil
 }

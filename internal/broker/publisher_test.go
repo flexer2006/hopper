@@ -71,7 +71,7 @@ func TestPublishAckNackTimeout(t *testing.T) {
 			t.Fatalf("PublishJob: %v", err)
 		}
 
-		if got.exchange != "" || got.key != broker.QueueJobs {
+		if got.exchange != broker.QueueJobs || got.key != broker.QueueJobs {
 			t.Fatalf("routing = %q %q", got.exchange, got.key)
 		}
 
@@ -86,6 +86,35 @@ func TestPublishAckNackTimeout(t *testing.T) {
 		id, err := broker.ParseEnqueue(got.msg.Body)
 		if err != nil || id != testJobID {
 			t.Fatalf("body = %s err=%v", got.msg.Body, err)
+		}
+	})
+
+	t.Run("delay queue exchange matches queue", func(t *testing.T) {
+		t.Parallel()
+
+		delay, err := domain.DelayQueue(1)
+		if err != nil {
+			t.Fatalf("DelayQueue: %v", err)
+		}
+
+		var got publishCall
+		pub := broker.NewPublisher(func(
+			_ context.Context,
+			exchange, key string,
+			msg amqp.Publishing,
+		) (broker.ConfirmWaiter, error) {
+			got = publishCall{exchange: exchange, key: key, msg: msg}
+
+			return stubWaiter{acked: true}, nil
+		}, broker.DefaultConfirmTimeout)
+
+		err = pub.PublishJob(t.Context(), delay, testJobID)
+		if err != nil {
+			t.Fatalf("PublishJob: %v", err)
+		}
+
+		if got.exchange != delay || got.key != delay {
+			t.Fatalf("routing = %q %q, want %q %q", got.exchange, got.key, delay, delay)
 		}
 	})
 
@@ -334,7 +363,7 @@ func TestPublishConfirmedMandatoryNotImmediate(t *testing.T) {
 
 	fake := &fakeConfirmChannel{deferred: &amqp.DeferredConfirmation{}}
 
-	waiter, err := broker.PublishConfirmed(t.Context(), fake, "", broker.QueueJobs, amqp.Publishing{})
+	waiter, err := broker.PublishConfirmed(t.Context(), fake, broker.QueueJobs, broker.QueueJobs, amqp.Publishing{})
 	if err != nil {
 		t.Fatalf("PublishConfirmed: %v", err)
 	}
@@ -343,7 +372,7 @@ func TestPublishConfirmedMandatoryNotImmediate(t *testing.T) {
 		t.Fatal("waiter = nil, want deferred confirmation")
 	}
 
-	if !fake.call.seen || fake.call.exchange != "" || fake.call.key != broker.QueueJobs {
+	if !fake.call.seen || fake.call.exchange != broker.QueueJobs || fake.call.key != broker.QueueJobs {
 		t.Fatalf("routing = %+v", fake.call)
 	}
 

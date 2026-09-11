@@ -85,7 +85,12 @@ func (r *Relay) Tick(ctx context.Context) error {
 }
 
 func (r *Relay) Publish(ctx context.Context, in Intent) error {
-	return r.publishOne(ctx, in)
+	err := r.publishOne(ctx, in)
+	if err != nil {
+		r.logIntent("sync publish", in, err)
+	}
+
+	return err
 }
 
 func (r *Relay) Start(parent context.Context) func(context.Context) error {

@@ -105,17 +105,35 @@ func bindPorts() fx.Option { //nolint:ireturn // Fx composition contract.
 }
 
 func mongoOptions(cfg *platform.Config) persist.Options {
-	opts := persist.Options{
+	if cfg == nil {
+		return persist.Options{
+			URI:        "",
+			Database:   "",
+			Collection: "",
+			Lease:      claimLease,
+		}
+	}
+
+	lease := claimLease
+	if cfg.ClaimLease > 0 {
+		lease = cfg.ClaimLease
+	}
+
+	return persist.Options{
 		URI:        cfg.MongoURI,
 		Database:   cfg.MongoDatabase,
 		Collection: cfg.MongoJobsCollection,
-		Lease:      claimLease,
+		Lease:      lease,
 	}
-
-	return opts
 }
 
 func requireInfrastructure(cfg *platform.Config) error {
+	if cfg == nil {
+		return fmt.Errorf("%w: missing config", platform.ErrConfig)
+	}
+
+	cfg.FillRuntimeDefaults()
+
 	err := cfg.ValidateInfrastructure()
 	if err != nil {
 		return err
@@ -128,6 +146,15 @@ func requireInfrastructure(cfg *platform.Config) error {
 	err = broker.ValidateURI(cfg.AMQPURI)
 	if err != nil {
 		return fmt.Errorf("amqp_uri: %w", err)
+	}
+
+	if cfg.ExchangeDelay != "" && cfg.ExchangeDelay != broker.ExchangeDelayDLX {
+		return fmt.Errorf("exchange_delay must be %s: %w", broker.ExchangeDelayDLX, platform.ErrConfig)
+	}
+
+	err = persist.CheckLeaseBudget(cfg.ClaimLease, cfg.HTTPTimeout, cfg.MongoOutcomeTimeout, cfg.PublishConfirmTimeout)
+	if err != nil {
+		return fmt.Errorf("fr-46 lease budget: %w", err)
 	}
 
 	return nil
@@ -158,6 +185,9 @@ func openStore(lc fx.Lifecycle, cfg *platform.Config) *persist.Store {
 
 func openBroker(lc fx.Lifecycle, cfg *platform.Config) *workerResources {
 	resources := newWorkerResources()
+	if cfg != nil && cfg.PublishConfirmTimeout > 0 {
+		resources.pub = broker.LazyPublisher(resources.channel, cfg.PublishConfirmTimeout)
+	}
 
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
@@ -166,7 +196,7 @@ func openBroker(lc fx.Lifecycle, cfg *platform.Config) *workerResources {
 				return fmt.Errorf("amqp open: %w", err)
 			}
 
-			channels, err := prepareBroker(conn, cfg.Prefetch)
+			channels, err := prepareBroker(conn, cfg.Prefetch, cfg.QueueJobs)
 			if err != nil {
 				return errors.Join(err, conn.Close())
 			}
@@ -192,7 +222,11 @@ func newWorkerResources() *workerResources {
 	return resources
 }
 
-func prepareBroker(conn *amqp.Connection, prefetch int) (brokerChannels, error) {
+func prepareBroker(conn *amqp.Connection, prefetch int, queue string) (brokerChannels, error) {
+	if queue == "" {
+		queue = broker.QueueJobs
+	}
+
 	pubCh, err := conn.Channel()
 	if err != nil {
 		return brokerChannels{}, fmt.Errorf("amqp publisher channel: %w", err)
@@ -208,7 +242,7 @@ func prepareBroker(conn *amqp.Connection, prefetch int) (brokerChannels, error) 
 		return brokerChannels{}, errors.Join(fmt.Errorf("amqp prepare: %w", err), subCh.Close(), pubCh.Close())
 	}
 
-	deliveries, err := subCh.Consume(broker.QueueJobs, "", false, false, false, false, nil)
+	deliveries, err := subCh.Consume(queue, "", false, false, false, false, nil)
 	if err != nil {
 		return brokerChannels{}, errors.Join(fmt.Errorf("amqp consume: %w", err), subCh.Close(), pubCh.Close())
 	}

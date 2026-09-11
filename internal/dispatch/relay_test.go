@@ -137,8 +137,8 @@ func TestRelayPendingPublishMarksPublished(t *testing.T) {
 	}
 
 	err = st.MarkPublished(t.Context(), testJobID, 1)
-	if !errors.Is(err, dispatch.ErrStaleGeneration) {
-		t.Fatalf("second mark gen 1 err = %v, want stale", err)
+	if err != nil {
+		t.Fatalf("second mark gen 1 err = %v, want nil (idempotent published)", err)
 	}
 }
 
@@ -279,8 +279,8 @@ func TestRelayHealsDuePublished(t *testing.T) {
 	}
 
 	err = st.MarkPublished(t.Context(), testJobID, 2)
-	if !errors.Is(err, dispatch.ErrStaleGeneration) {
-		t.Fatalf("heal marked gen 2 stale? err=%v", err)
+	if err != nil {
+		t.Fatalf("heal marked gen 2 err=%v, want nil (idempotent published)", err)
 	}
 }
 

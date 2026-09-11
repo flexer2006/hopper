@@ -122,19 +122,32 @@ func TestDeclareClassicDurableTTLAndDLRK(t *testing.T) {
 		t.Fatalf("Declare: %v", err)
 	}
 
-	if len(fake.exchanges) != 1 {
-		t.Fatalf("exchanges = %d, want 1", len(fake.exchanges))
-	}
-
-	exch := fake.exchanges[0]
-	if exch.name != broker.ExchangeDelayDLX || exch.kind != "direct" || !exch.durable || exch.autoDelete ||
-		exch.internal {
-		t.Fatalf("exchange = %+v", exch)
-	}
-
 	names, err := broker.AllQueueNames()
 	if err != nil {
 		t.Fatalf("AllQueueNames: %v", err)
+	}
+
+	wantExchanges := 1 + len(names)
+	if len(fake.exchanges) != wantExchanges {
+		t.Fatalf("exchanges = %d, want %d (delay dlx + one per queue)", len(fake.exchanges), wantExchanges)
+	}
+
+	byExch := make(map[string]exchangeCall, len(fake.exchanges))
+	for _, item := range fake.exchanges {
+		byExch[item.name] = item
+		if item.kind != "direct" || !item.durable || item.autoDelete || item.internal {
+			t.Fatalf("exchange %s = %+v", item.name, item)
+		}
+	}
+
+	if byExch[broker.ExchangeDelayDLX].name == "" {
+		t.Fatalf("missing %s: %+v", broker.ExchangeDelayDLX, fake.exchanges)
+	}
+
+	for _, name := range names {
+		if byExch[name].name == "" {
+			t.Fatalf("missing work exchange %s: %+v", name, fake.exchanges)
+		}
 	}
 
 	if len(fake.queues) != len(names) {
@@ -209,13 +222,23 @@ func TestDeclareClassicDurableTTLAndDLRK(t *testing.T) {
 		}
 	}
 
-	if len(fake.binds) != 1 {
-		t.Fatalf("binds = %+v", fake.binds)
+	if len(fake.binds) != len(names)+1 {
+		t.Fatalf("binds = %d, want %d; %+v", len(fake.binds), len(names)+1, fake.binds)
 	}
 
-	bind := fake.binds[0]
-	if bind.name != broker.QueueJobs || bind.key != broker.RoutingKeyJobs || bind.exchange != broker.ExchangeDelayDLX {
-		t.Fatalf("bind = %+v", bind)
+	byBind := make(map[string]bindCall, len(fake.binds))
+	for _, item := range fake.binds {
+		byBind[item.exchange+"|"+item.name+"|"+item.key] = item
+	}
+
+	if byBind[broker.ExchangeDelayDLX+"|"+broker.QueueJobs+"|"+broker.RoutingKeyJobs].name == "" {
+		t.Fatalf("missing delay-dlx bind: %+v", fake.binds)
+	}
+
+	for _, name := range names {
+		if byBind[name+"|"+name+"|"+name].name == "" {
+			t.Fatalf("missing self-bind for %s: %+v", name, fake.binds)
+		}
 	}
 }
 
@@ -374,8 +397,14 @@ func TestPreparePublisherConfirmDeclareNoQos(t *testing.T) {
 		t.Fatalf("AllQueueNames: %v", err)
 	}
 
-	if len(fake.queues) != len(names) || len(fake.exchanges) != 1 {
-		t.Fatalf("topology queues=%d exchanges=%d, want %d/1", len(fake.queues), len(fake.exchanges), len(names))
+	if len(fake.queues) != len(names) || len(fake.exchanges) != 1+len(names) {
+		t.Fatalf(
+			"topology queues=%d exchanges=%d, want %d/%d",
+			len(fake.queues),
+			len(fake.exchanges),
+			len(names),
+			1+len(names),
+		)
 	}
 
 	if fake.qosCount != 0 {

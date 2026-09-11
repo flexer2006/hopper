@@ -138,7 +138,15 @@ func (m *mem) markPublished(_ context.Context, id string, generation int) (jobDo
 		return jobDoc{}, ErrNotFound
 	}
 
-	if doc.Dispatch.Generation != generation || doc.Dispatch.Status != dispatch.StatusPending {
+	if doc.Dispatch.Generation != generation {
+		return jobDoc{}, ErrStaleGeneration
+	}
+
+	if doc.Dispatch.Status == dispatch.StatusPublished {
+		return doc, nil
+	}
+
+	if doc.Dispatch.Status != dispatch.StatusPending {
 		return jobDoc{}, ErrStaleGeneration
 	}
 

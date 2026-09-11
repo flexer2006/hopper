@@ -219,6 +219,7 @@ deps:
       - fx
       - zap
       - config
+      - amqp
 
   fxworker:
     mayDependOn:
@@ -230,10 +231,12 @@ deps:
       - persist
       - broker
       - egress
+      - httpapi
     canUse:
       - fx
       - zap
       - config
+      - amqp
 
   cmd:
     mayDependOn:

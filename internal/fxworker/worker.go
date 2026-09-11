@@ -24,13 +24,14 @@ type auxDLQ struct {
 type workerLife struct {
 	fx.In
 
-	LC     fx.Lifecycle
-	Log    *zap.Logger
-	Holder *relayHolder
-	Jobs   deliver.Jobs      `optional:"true"`
-	Client deliver.HTTP      `optional:"true"`
-	Pub    *broker.Publisher `optional:"true"`
-	Source worker.Source     `optional:"true"`
+	LC         fx.Lifecycle
+	Shutdowner fx.Shutdowner
+	Log        *zap.Logger
+	Holder     *relayHolder
+	Jobs       deliver.Jobs      `optional:"true"`
+	Client     deliver.HTTP      `optional:"true"`
+	Pub        *broker.Publisher `optional:"true"`
+	Source     worker.Source     `optional:"true"`
 }
 
 const (
@@ -95,8 +96,9 @@ func startWorker(in workerLife) error { //nolint:gocritic // hugeParam: fx.In co
 
 			wg.Go(func() {
 				runErr := loop.Run(runCtx, in.Source)
+
 				if runErr != nil && runCtx.Err() == nil {
-					in.Log.Warn("worker run", zap.Error(runErr))
+					failFastConsume(in.Log, in.Shutdowner, runErr)
 				}
 			})
 
@@ -112,6 +114,19 @@ func startWorker(in workerLife) error { //nolint:gocritic // hugeParam: fx.In co
 	})
 
 	return nil
+}
+
+func failFastConsume(log *zap.Logger, shutdowner fx.Shutdowner, runErr error) {
+	log.Error("worker run", zap.Error(runErr))
+
+	if shutdowner == nil {
+		return
+	}
+
+	shutErr := shutdowner.Shutdown(fx.ExitCode(1))
+	if shutErr != nil {
+		log.Error("worker shutdown", zap.Error(shutErr))
+	}
 }
 
 func workerID() string {

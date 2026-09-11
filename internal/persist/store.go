@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
+
 	"github.com/flexer2006/hopper/internal/deliver"
 	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/domain"
@@ -37,6 +39,7 @@ type collection interface { //nolint:interfacebloat // persist test double mirro
 
 type closer interface {
 	Disconnect(ctx context.Context) error
+	Ping(ctx context.Context, rp *readpref.ReadPref) error
 }
 
 type Store struct {
@@ -203,6 +206,14 @@ func (s *Store) ListDead(ctx context.Context, limit int) ([]query.Job, error) {
 	return out, nil
 }
 
+func (s *Store) Ping(ctx context.Context) error {
+	if s == nil || s.client == nil {
+		return ErrNotOpen
+	}
+
+	return s.client.Ping(ctx, readpref.Primary())
+}
+
 func (s *Store) Close(ctx context.Context) error {
 	if s == nil || s.client == nil {
 		return nil
@@ -212,6 +223,8 @@ func (s *Store) Close(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mongo disconnect: %w", err)
 	}
+
+	s.client = nil
 
 	return nil
 }

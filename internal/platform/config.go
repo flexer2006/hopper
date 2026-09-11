@@ -30,6 +30,12 @@ type Config struct {
 	RateLimitBurst            int           `yaml:"rate_limit_burst"`
 	TrustXFFHops              int           `yaml:"trust_xff_hops"`
 	LogStackTraces            bool          `yaml:"log_stack_traces"`
+	MongoURI                  string        `yaml:"mongo_uri"`
+	AMQPURI                   string        `yaml:"amqp_uri"`
+	MongoDatabase             string        `yaml:"mongo_database"`
+	MongoJobsCollection       string        `yaml:"mongo_jobs_collection"`
+	Prefetch                  int           `yaml:"-"`
+	PrefetchYAML              *int          `yaml:"prefetch"`
 }
 
 const (
@@ -47,6 +53,11 @@ const (
 	RateLimitRPMEnv              = "HOPPER_RATE_LIMIT_RPM"
 	RateLimitBurstEnv            = "HOPPER_RATE_LIMIT_BURST"
 	TrustXFFHopsEnv              = "HOPPER_TRUST_XFF_HOPS"
+	MongoURIEnv                  = "HOPPER_MONGO_URI"
+	AMQPURIEnv                   = "HOPPER_AMQP_URI"
+	MongoDatabaseEnv             = "HOPPER_MONGO_DATABASE"
+	MongoJobsCollectionEnv       = "HOPPER_MONGO_JOBS_COLLECTION"
+	PrefetchEnv                  = "HOPPER_PREFETCH"
 	MinAPITokenBytes             = 32
 	DefaultAPIShutdownTimeout    = 10 * time.Second
 	DefaultWorkerShutdownTimeout = 30 * time.Second
@@ -98,6 +109,14 @@ func LoadFile(path string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func (cfg *Config) ValidateInfrastructure() error {
+	if cfg.MongoURI == "" || cfg.AMQPURI == "" {
+		return fmt.Errorf("%w: mongo_uri and amqp_uri are required for production", ErrConfig)
+	}
+
+	return nil
 }
 
 func (cfg *Config) applyTimeouts() error {
@@ -198,8 +217,63 @@ func (cfg *Config) applyHTTP() error {
 	}
 
 	cfg.TrustXFFHops, err = resolveInt(cfg.TrustXFFHops, TrustXFFHopsEnv, 0)
+	if err != nil {
+		return err
+	}
 
-	return err
+	cfg.MongoURI = resolveString(cfg.MongoURI, MongoURIEnv, "")
+	cfg.AMQPURI = resolveString(cfg.AMQPURI, AMQPURIEnv, "")
+	cfg.MongoDatabase = resolveString(cfg.MongoDatabase, MongoDatabaseEnv, "hopper")
+	cfg.MongoJobsCollection = resolveString(cfg.MongoJobsCollection, MongoJobsCollectionEnv, "jobs")
+
+	prefetchYAML := 0
+	if cfg.PrefetchYAML != nil {
+		prefetchYAML = *cfg.PrefetchYAML
+	}
+
+	cfg.Prefetch, err = resolvePrefetch(prefetchYAML, cfg.PrefetchYAML != nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func resolvePrefetch(yamlVal int, hasYAML bool) (int, error) {
+	if raw := os.Getenv(PrefetchEnv); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			return 0, fmt.Errorf("%w: parse %s %q: %w", ErrConfig, PrefetchEnv, raw, err)
+		}
+
+		if parsed < 1 {
+			return 0, fmt.Errorf("%w: %s must be >= 1", ErrConfig, PrefetchEnv)
+		}
+
+		return parsed, nil
+	}
+
+	if !hasYAML {
+		return 1, nil
+	}
+
+	if yamlVal < 1 {
+		return 0, fmt.Errorf("%w: prefetch must be >= 1", ErrConfig)
+	}
+
+	return yamlVal, nil
+}
+
+func resolveString(yamlVal, envName, fallback string) string {
+	if raw := os.Getenv(envName); raw != "" {
+		return raw
+	}
+
+	if yamlVal == "" {
+		return fallback
+	}
+
+	return yamlVal
 }
 
 func resolveInt(yamlVal int, envName string, fallback int) (int, error) {
@@ -268,6 +342,14 @@ func (cfg *Config) validate() error {
 
 	if cfg.RateLimitRPM < 1 || cfg.RateLimitBurst < 1 {
 		return fmt.Errorf("%w: rate limit must be >= 1", ErrConfig)
+	}
+
+	if (cfg.MongoURI == "") != (cfg.AMQPURI == "") {
+		return fmt.Errorf("%w: mongo_uri and amqp_uri must be configured together", ErrConfig)
+	}
+
+	if cfg.MongoDatabase == "" || cfg.MongoJobsCollection == "" || cfg.Prefetch < 1 {
+		return fmt.Errorf("%w: mongo database, collection, and prefetch must be valid", ErrConfig)
 	}
 
 	return nil

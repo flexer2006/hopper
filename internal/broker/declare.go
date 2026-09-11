@@ -1,6 +1,8 @@
 package broker
 
 import (
+	"fmt"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 
 	"github.com/flexer2006/hopper/internal/domain"
@@ -17,8 +19,12 @@ type qosChannel interface {
 	Qos(prefetchCount, prefetchSize int, global bool) error
 }
 
-func SetPrefetch(channel qosChannel) error {
-	err := channel.Qos(PrefetchCount, prefetchSizeBytes, false)
+func SetPrefetchCount(channel qosChannel, count int) error {
+	if count < 1 {
+		return fmt.Errorf("invalid prefetch: %w", ErrInvalidPrefetch)
+	}
+
+	err := channel.Qos(count, prefetchSizeBytes, false)
 	if err != nil {
 		return err
 	}
@@ -68,20 +74,27 @@ func Declare(channel topologyChannel) error {
 }
 
 func Prepare(pub topologyChannel, sub qosChannel) error {
+	return PrepareWithPrefetch(pub, sub, PrefetchCount)
+}
+
+func PrepareWithPrefetch(pub topologyChannel, sub qosChannel, prefetch int) error {
+	if prefetch < 1 {
+		return fmt.Errorf("invalid prefetch: %w", ErrInvalidPrefetch)
+	}
+
+	err := PreparePublisher(pub)
+	if err != nil {
+		return err
+	}
+
+	return SetPrefetchCount(sub, prefetch)
+}
+
+func PreparePublisher(pub topologyChannel) error {
 	err := pub.Confirm(false)
 	if err != nil {
 		return err
 	}
 
-	err = Declare(pub)
-	if err != nil {
-		return err
-	}
-
-	err = SetPrefetch(sub)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return Declare(pub)
 }

@@ -31,5 +31,5 @@ func NewApp(opts ...fx.Option) *fx.App {
 }
 
 func Run() error {
-	return platform.RunProcess("worker", NewApp())
+	return platform.RunProcess("worker", NewApp(Production()))
 }

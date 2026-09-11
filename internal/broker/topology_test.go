@@ -294,6 +294,127 @@ func TestPrepareErrorPaths(t *testing.T) {
 	})
 }
 
+func TestSetPrefetchCountAndConfiguredPrepare(t *testing.T) {
+	t.Parallel()
+
+	t.Run("applies configured count", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &fakeTopo{}
+		if err := broker.SetPrefetchCount(fake, 4); err != nil {
+			t.Fatalf("SetPrefetchCount(4): %v", err)
+		}
+		if fake.qosCount != 4 || fake.qosSize != 0 || fake.qosGlobal {
+			t.Fatalf("qos = count=%d size=%d global=%v, want 4/0/false", fake.qosCount, fake.qosSize, fake.qosGlobal)
+		}
+	})
+
+	t.Run("rejects zero and negative", func(t *testing.T) {
+		t.Parallel()
+
+		for _, count := range []int{0, -1} {
+			fake := &fakeTopo{}
+			if err := broker.SetPrefetchCount(fake, count); err == nil {
+				t.Fatalf("SetPrefetchCount(%d): expected error", count)
+			}
+			if fake.qosCount != 0 {
+				t.Fatalf("SetPrefetchCount(%d) reached Qos", count)
+			}
+		}
+	})
+
+	t.Run("propagates qos error", func(t *testing.T) {
+		t.Parallel()
+
+		want := errors.New("qos")
+		fake := &fakeTopo{qosErr: want}
+		if err := broker.SetPrefetchCount(fake, 2); !errors.Is(err, want) {
+			t.Fatalf("err = %v, want %v", err, want)
+		}
+	})
+
+	t.Run("configured prepare applies count once", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &fakeTopo{}
+		if err := broker.PrepareWithPrefetch(fake, fake, 4); err != nil {
+			t.Fatalf("PrepareWithPrefetch(4): %v", err)
+		}
+		if fake.qosCount != 4 || fake.qosSize != 0 || fake.qosGlobal {
+			t.Fatalf("qos = count=%d size=%d global=%v, want 4/0/false", fake.qosCount, fake.qosSize, fake.qosGlobal)
+		}
+	})
+
+	t.Run("configured prepare rejects invalid count", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &fakeTopo{}
+		if err := broker.PrepareWithPrefetch(fake, fake, 0); err == nil {
+			t.Fatal("PrepareWithPrefetch(0): expected error")
+		}
+	})
+}
+
+func TestPreparePublisherConfirmDeclareNoQos(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTopo{}
+
+	err := broker.PreparePublisher(fake)
+	if err != nil {
+		t.Fatalf("PreparePublisher: %v", err)
+	}
+
+	if !fake.confirmed || !fake.confirmWait {
+		t.Fatalf("confirm.select noWait=false required, got confirmed=%v wait=%v", fake.confirmed, fake.confirmWait)
+	}
+
+	names, err := broker.AllQueueNames()
+	if err != nil {
+		t.Fatalf("AllQueueNames: %v", err)
+	}
+
+	if len(fake.queues) != len(names) || len(fake.exchanges) != 1 {
+		t.Fatalf("topology queues=%d exchanges=%d, want %d/1", len(fake.queues), len(fake.exchanges), len(names))
+	}
+
+	if fake.qosCount != 0 {
+		t.Fatalf("publisher-only prepare must not set Qos, got %d", fake.qosCount)
+	}
+}
+
+func TestPreparePublisherErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	t.Run("confirm", func(t *testing.T) {
+		t.Parallel()
+
+		want := errors.New("confirm")
+		fake := &fakeTopo{confirmErr: want}
+
+		err := broker.PreparePublisher(fake)
+		if !errors.Is(err, want) {
+			t.Fatalf("err = %v", err)
+		}
+
+		if len(fake.exchanges) != 0 {
+			t.Fatal("declare must not run when confirm.select fails")
+		}
+	})
+
+	t.Run("exchange", func(t *testing.T) {
+		t.Parallel()
+
+		want := errors.New("exchange")
+		fake := &fakeTopo{exchangeErr: want}
+
+		err := broker.PreparePublisher(fake)
+		if !errors.Is(err, want) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
 func TestDeclareQueueAndBindErrors(t *testing.T) {
 	t.Parallel()
 

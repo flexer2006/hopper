@@ -356,13 +356,126 @@ func TestLoadHTTPAddrEnvOverlay(t *testing.T) {
 	}
 }
 
+func TestLoadInfrastructureConfig(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) +
+		"mongo_uri: mongodb://mongo:27017/?replicaSet=rs0\n" +
+		"amqp_uri: amqp://guest:***@rabbitmq:5672/\n" +
+		"mongo_database: custom\n" +
+		"mongo_jobs_collection: queued_jobs\n" +
+		"prefetch: 4\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := platform.LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MongoURI == "" || cfg.AMQPURI == "" || cfg.MongoDatabase != "custom" ||
+		cfg.MongoJobsCollection != "queued_jobs" ||
+		cfg.Prefetch != 4 {
+		t.Fatalf("infrastructure config = %+v", cfg)
+	}
+}
+
+func TestLoadInfrastructureEnvOverlay(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	if err := os.WriteFile(path, []byte(platform.MinimalYAML(platform.ValidToken())), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(platform.ConfigFileEnv, path)
+	t.Setenv(platform.MongoURIEnv, "mongodb://mongo:27017/?replicaSet=rs0")
+	t.Setenv(platform.AMQPURIEnv, "amqp://guest:guest@rabbitmq:5672/")
+	t.Setenv(platform.MongoDatabaseEnv, "envdb")
+	t.Setenv(platform.MongoJobsCollectionEnv, "envjobs")
+	t.Setenv(platform.PrefetchEnv, "7")
+
+	cfg, err := platform.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MongoDatabase != "envdb" || cfg.MongoJobsCollection != "envjobs" || cfg.Prefetch != 7 {
+		t.Fatalf("env infrastructure config = %+v", cfg)
+	}
+}
+
+func TestLoadPrefetchEnvOverridesInvalidYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) + "prefetch: -1\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(platform.ConfigFileEnv, path)
+	t.Setenv(platform.PrefetchEnv, "4")
+
+	cfg, err := platform.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Prefetch != 4 {
+		t.Fatalf("Prefetch = %d, want 4", cfg.Prefetch)
+	}
+}
+
+func TestConfigValidateInfrastructure(t *testing.T) {
+	t.Parallel()
+
+	valid := platform.Config{MongoURI: "mongo", AMQPURI: "amqp"}
+	if err := valid.ValidateInfrastructure(); err != nil {
+		t.Fatalf("ValidateInfrastructure() unexpected error: %v", err)
+	}
+	missing := platform.Config{}
+	if err := missing.ValidateInfrastructure(); !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("ValidateInfrastructure() error = %v, want ErrConfig", err)
+	}
+}
+
+func TestLoadRejectsPartialInfrastructureConfig(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) + "mongo_uri: mongodb://mongo:27017/?replicaSet=rs0\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := platform.LoadFile(path)
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("LoadFile() err = %v, want ErrConfig", err)
+	}
+}
+
+func TestLoadRejectsZeroPrefetch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hopper.yaml")
+	body := platform.MinimalYAML(platform.ValidToken()) +
+		"mongo_uri: mongodb://mongo:27017/?replicaSet=rs0\n" +
+		"amqp_uri: amqp://guest:***@rabbitmq:5672/\n" +
+		"prefetch: 0\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := platform.LoadFile(path)
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("LoadFile() err = %v, want ErrConfig", err)
+	}
+}
+
 func TestLoadRejectsZeroJSONDepthEnv(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "hopper.yaml")
-
-	writeErr := os.WriteFile(path, []byte(platform.MinimalYAML(platform.ValidToken())), 0o600)
-	if writeErr != nil {
-		t.Fatal(writeErr)
+	if err := os.WriteFile(path, []byte(platform.MinimalYAML(platform.ValidToken())), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
 	t.Setenv(platform.ConfigFileEnv, path)

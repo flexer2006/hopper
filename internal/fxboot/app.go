@@ -17,8 +17,8 @@ func NewApp(
 	opts ...fx.Option,
 ) *fx.App {
 	cfg, loadErr := platform.Load()
-	timeout := fallback
 
+	timeout := fallback
 	if loadErr == nil {
 		timeout = pick(new(cfg))
 	}

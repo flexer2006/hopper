@@ -18,6 +18,8 @@ type Options struct {
 	Lease      time.Duration
 }
 
+const openCleanupTimeout = 5 * time.Second
+
 func Open(ctx context.Context, opts Options) (*Store, error) {
 	opts = withOpenDefaults(opts)
 	if !URIHasReplicaSet(opts.URI) {
@@ -34,12 +36,42 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		return store, nil
 	}
 
-	disErr := client.Disconnect(ctx)
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openCleanupTimeout)
+	defer cancel()
+
+	disErr := client.Disconnect(cleanupCtx)
 	if disErr != nil {
 		return nil, fmt.Errorf("mongo ready: %w", errors.Join(readyErr, disErr))
 	}
 
 	return nil, fmt.Errorf("mongo ready: %w", readyErr)
+}
+
+func (s *Store) Open(ctx context.Context, opts Options) error {
+	if s == nil {
+		return ErrNotOpen
+	}
+
+	if s.client != nil {
+		return ErrAlreadyOpen
+	}
+
+	opened, err := Open(ctx, opts)
+	if err != nil {
+		return err
+	}
+
+	s.adopt(opened)
+
+	return nil
+}
+
+func (s *Store) adopt(opened *Store) {
+	s.coll = opened.coll
+	s.now = opened.now
+	s.newFence = opened.newFence
+	s.client = opened.client
+	s.lease = opened.lease
 }
 
 func withOpenDefaults(opts Options) Options {

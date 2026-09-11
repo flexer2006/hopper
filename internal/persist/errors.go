@@ -15,6 +15,8 @@ var (
 	ErrDuplicateKey    = enqueue.ErrDuplicateKey
 	ErrInvalidStatus   = errors.New("invalid outcome status")
 	ErrStandalone      = errors.New("mongodb replica set required")
+	ErrNotOpen         = errors.New("mongodb store not open")
+	ErrAlreadyOpen     = errors.New("mongodb store already open")
 	ErrStaleFence      = errors.New("stale fence token")
 	ErrStaleGeneration = dispatch.ErrStaleGeneration
 	ErrNotDue          = deliver.ErrNotDue

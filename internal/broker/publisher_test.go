@@ -24,6 +24,18 @@ type publishCall struct {
 	msg      amqp.Publishing
 }
 
+type confirmCall struct {
+	exchange, key        string
+	mandatory, immediate bool
+	seen                 bool
+}
+
+type fakeConfirmChannel struct {
+	call     confirmCall
+	deferred *amqp.DeferredConfirmation
+	err      error
+}
+
 func (stub stubWaiter) WaitContext(ctx context.Context) (bool, error) {
 	if stub.err != nil {
 		return stub.acked, stub.err
@@ -300,4 +312,95 @@ func TestPublisherFromChannelConstructs(t *testing.T) {
 	t.Parallel()
 
 	_ = broker.PublisherFromChannel(nil, 0)
+}
+
+func (fake *fakeConfirmChannel) PublishWithDeferredConfirmWithContext(
+	_ context.Context,
+	exchange, key string,
+	mandatory, immediate bool,
+	_ amqp.Publishing, //nolint:gocritic // hugeParam: mirrors the amqp091-go channel signature.
+) (*amqp.DeferredConfirmation, error) {
+	fake.call = confirmCall{exchange: exchange, key: key, mandatory: mandatory, immediate: immediate, seen: true}
+
+	if fake.err != nil {
+		return nil, fake.err
+	}
+
+	return fake.deferred, nil
+}
+
+func TestPublishConfirmedMandatoryNotImmediate(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeConfirmChannel{deferred: &amqp.DeferredConfirmation{}}
+
+	waiter, err := broker.PublishConfirmed(t.Context(), fake, "", broker.QueueJobs, amqp.Publishing{})
+	if err != nil {
+		t.Fatalf("PublishConfirmed: %v", err)
+	}
+
+	if waiter == nil {
+		t.Fatal("waiter = nil, want deferred confirmation")
+	}
+
+	if !fake.call.seen || fake.call.exchange != "" || fake.call.key != broker.QueueJobs {
+		t.Fatalf("routing = %+v", fake.call)
+	}
+
+	if !fake.call.mandatory {
+		t.Fatal("mandatory = false, want true (ADR-004 confirm-publish; matches PublisherFromChannel)")
+	}
+
+	if fake.call.immediate {
+		t.Fatal("immediate = true, want false")
+	}
+}
+
+func TestPublishConfirmedErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil deferred is no confirm mode", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &fakeConfirmChannel{}
+
+		waiter, err := broker.PublishConfirmed(t.Context(), fake, "", broker.QueueJobs, amqp.Publishing{})
+		if !errors.Is(err, broker.ErrNoConfirm) {
+			t.Fatalf("err = %v, want ErrNoConfirm", err)
+		}
+
+		if waiter != nil {
+			t.Fatalf("waiter = %v, want nil", waiter)
+		}
+	})
+
+	t.Run("publish io wrapped", func(t *testing.T) {
+		t.Parallel()
+
+		want := errors.New("io")
+		fake := &fakeConfirmChannel{err: want}
+
+		_, err := broker.PublishConfirmed(t.Context(), fake, "", broker.QueueJobs, amqp.Publishing{})
+		if !errors.Is(err, want) {
+			t.Fatalf("err = %v, want %v", err, want)
+		}
+	})
+}
+
+func TestLazyPublisherNilChannelIsUnavailable(t *testing.T) {
+	t.Parallel()
+
+	pub := broker.LazyPublisher(func() *amqp.Channel { return nil }, broker.DefaultConfirmTimeout)
+	if pub == nil {
+		t.Fatal("LazyPublisher = nil")
+	}
+
+	err := pub.PublishJob(t.Context(), broker.QueueJobs, testJobID)
+	if !errors.Is(err, broker.ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+
+	if errors.Is(err, broker.ErrNoConfirm) || errors.Is(err, broker.ErrURI) {
+		t.Fatal("unavailable must not alias ErrNoConfirm or ErrURI")
+	}
 }

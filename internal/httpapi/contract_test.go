@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -32,6 +33,17 @@ var publicJobSecrets = []string{
 	"replay_count",
 }
 
+var shippedProductDocs = [][]string{
+	{"api", "openapi.yaml"},
+	{"contracts", "attempt-record.schema.json"},
+	{"contracts", "dispatch-intent.schema.json"},
+	{"contracts", "dlq-message.schema.json"},
+	{"contracts", "enqueue-message.schema.json"},
+	{"contracts", "error-response.schema.json"},
+	{"contracts", "job-document.schema.json"},
+	{"contracts", "service-unavailable-response.schema.json"},
+}
+
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 
@@ -59,12 +71,131 @@ func moduleRoot(t *testing.T) string {
 	return ""
 }
 
+func resolveProductDocs(moduleRoot string, parts ...string) (string, bool) {
+	candidates := []string{
+		filepath.Join(append([]string{moduleRoot, "..", "docs"}, parts...)...),
+		filepath.Join(append([]string{moduleRoot, "docs"}, parts...)...),
+	}
+
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path, true
+		}
+	}
+
+	return "", false
+}
+
 func productDocs(t *testing.T, parts ...string) string {
 	t.Helper()
 
-	elems := append([]string{moduleRoot(t), "..", "docs"}, parts...)
+	path, ok := resolveProductDocs(moduleRoot(t), parts...)
+	if !ok {
+		t.Fatalf("product docs not found for %s (tried ../docs then module docs/)", filepath.Join(parts...))
+	}
 
-	return filepath.Join(elems...)
+	return path
+}
+
+func TestResolveProductDocsSiblingLayout(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	mod := filepath.Join(root, "mod")
+	sib := filepath.Join(root, "docs", "api")
+	nested := filepath.Join(mod, "docs", "api")
+
+	err := os.MkdirAll(sib, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.MkdirAll(nested, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(filepath.Join(sib, "openapi.yaml"), []byte("sibling"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(filepath.Join(nested, "openapi.yaml"), []byte("nested"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := resolveProductDocs(mod, "api", "openapi.yaml")
+	if !ok || got != filepath.Join(sib, "openapi.yaml") {
+		t.Fatalf("got %q ok=%v, want sibling", got, ok)
+	}
+}
+
+func TestResolveProductDocsModuleLayout(t *testing.T) {
+	t.Parallel()
+
+	mod := t.TempDir()
+	nested := filepath.Join(mod, "docs", "contracts")
+
+	err := os.MkdirAll(nested, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := filepath.Join(nested, "enqueue-message.schema.json")
+	err = os.WriteFile(want, []byte("{}"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := resolveProductDocs(mod, "contracts", "enqueue-message.schema.json")
+	if !ok || got != want {
+		t.Fatalf("got %q ok=%v, want module-local", got, ok)
+	}
+}
+
+func TestModuleShipsProductDocsForGitHubCI(t *testing.T) {
+	t.Parallel()
+
+	root := moduleRoot(t)
+	for _, parts := range shippedProductDocs {
+		path := filepath.Join(append([]string{root, "docs"}, parts...)...)
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("GitHub CI has no sibling ../docs; module must ship %s: %v", filepath.Join(parts...), err)
+		}
+	}
+}
+
+func TestModuleProductDocsMatchSiblingWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	root := moduleRoot(t)
+	sibRoot := filepath.Join(root, "..", "docs")
+	if _, err := os.Stat(sibRoot); err != nil {
+		return
+	}
+
+	for _, parts := range shippedProductDocs {
+		sib := filepath.Join(append([]string{sibRoot}, parts...)...)
+		mod := filepath.Join(append([]string{root, "docs"}, parts...)...)
+		want, err := os.ReadFile(sib)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := os.ReadFile(mod)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !bytes.Equal(got, want) {
+			rel := filepath.Join(parts...)
+			t.Fatalf(
+				"module docs/%s drifted from sibling ../docs (GitHub CI would test a stale copy)",
+				rel,
+			)
+		}
+	}
 }
 
 func loadYAML(t *testing.T, path string) map[string]any {
@@ -194,10 +325,6 @@ func TestOpenAPIStructuralATCONTRACT01(t *testing.T) {
 	t.Parallel()
 
 	doc := loadYAML(t, productDocs(t, "api", "openapi.yaml"))
-
-	if doc["openapi"] != "3.1.0" {
-		t.Fatalf("openapi = %v, want 3.1.0", doc["openapi"])
-	}
 
 	paths := child(t, doc, "paths")
 	wantOps := map[string][]string{

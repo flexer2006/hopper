@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hopper.local/schemas/service-unavailable-response.schema.json",
+  "title": "HopperServiceUnavailableResponse",
+  "description": "Enqueue/replay 503 when durable job exists but confirm failed (MSG-503)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "error", "code"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-f0-9]{24}$" },
+    "error": { "type": "string", "maxLength": 512 },
+    "code": { "type": "string", "enum": ["service_unavailable"] }
+  }
+}

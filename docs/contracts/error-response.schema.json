@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hopper.local/schemas/error-response.schema.json",
+  "title": "HopperErrorResponse",
+  "description": "HTTP error body (MSG-ERR). Enqueue 503 uses service-unavailable-response.schema.json with required id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error", "code"],
+  "properties": {
+    "error": { "type": "string", "maxLength": 512 },
+    "code": {
+      "type": "string",
+      "enum": [
+        "validation_failed",
+        "unauthorized",
+        "not_found",
+        "conflict",
+        "payload_too_large",
+        "service_unavailable",
+        "rate_limited",
+        "idempotency_conflict"
+      ]
+    }
+  }
+}

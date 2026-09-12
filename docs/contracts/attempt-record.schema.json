@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hopper.local/schemas/attempt-record.schema.json",
+  "title": "HopperAttemptRecord",
+  "description": "Immutable delivery attempt (MSG-ATT). Identity: (cycle, attempt). ADR-010 failure_class.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cycle", "attempt", "at", "duration_ms", "outcome"],
+  "properties": {
+    "cycle": { "type": "integer", "minimum": 0 },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "at": { "type": "string", "format": "date-time" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "outcome": { "type": "string", "enum": ["success", "failure"] },
+    "failure_class": {
+      "type": "string",
+      "enum": ["retryable", "terminal_http", "non_retryable_local"]
+    },
+    "status_code": { "type": "integer", "minimum": 100, "maximum": 599 },
+    "error": { "type": "string", "maxLength": 1024 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "outcome": { "const": "success" } } },
+      "then": { "required": ["status_code"] }
+    },
+    {
+      "if": { "properties": { "outcome": { "const": "failure" } } },
+      "then": { "required": ["failure_class", "error"] }
+    }
+  ]
+}

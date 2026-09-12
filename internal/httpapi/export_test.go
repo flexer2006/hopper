@@ -46,8 +46,16 @@ func XFFHop(header string, hops int) string {
 }
 
 func RecovererForTest() http.Handler {
+	return RecovererWithLog(nil)
+}
+
+func RecovererWithLog(log *zap.Logger) http.Handler {
 	h := new(Handler)
-	h.log = zap.NewNop()
+	if log == nil {
+		log = zap.NewNop()
+	}
+
+	h.log = log
 
 	return h.recoverer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		panic("test")

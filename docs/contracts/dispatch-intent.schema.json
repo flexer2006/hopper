@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hopper.local/schemas/dispatch-intent.schema.json",
+  "title": "HopperDispatchIntent",
+  "description": "Embedded outbox on Job (ADR-004). Single pending intent; CAS publish by generation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generation", "intent", "queue", "status", "created_at"],
+  "properties": {
+    "generation": { "type": "integer", "minimum": 1 },
+    "intent": { "type": "string", "enum": ["enqueue", "retry", "dlq"] },
+    "queue": { "type": "string" },
+    "cycle": { "type": "integer", "minimum": 0 },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "status": { "type": "string", "enum": ["pending", "published"] },
+    "not_before": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Worker MUST NOT consume-equivalent HTTP before this instant (Mongo UTC)"
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "published_at": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,477 @@
+openapi: 3.2.1
+info:
+  title: Hopper API
+  version: 0.2.0
+  description: Outbound HTTP job delivery. POST /v1/jobs needs Idempotency-Key; 202 after confirm, 503 if confirm fails.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: http://localhost:8080
+    description: Local lab
+security:
+  - bearerAuth: []
+tags:
+  - name: jobs
+    description: Job lifecycle
+  - name: health
+    description: Probes
+paths:
+  /v1/jobs:
+    post:
+      operationId: createJob
+      tags: [jobs]
+      summary: Enqueue an outbound job
+      description: Idempotency-Key required. Same key and body hash return the same job (202 or 503). Different body returns 409.
+      parameters:
+        - $ref: '#/components/parameters/ProducerIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+            examples:
+              httpPost:
+                summary: HTTP POST JSON
+                value:
+                  type: http_post
+                  target: https://example.invalid/webhook
+                  payload:
+                    event: order.created
+                    order_id: "00000000-0000-4000-8000-000000000001"
+                  max_attempts: 5
+      responses:
+        '202':
+          description: Accepted and enqueued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateJobResponse'
+        '400':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Idempotency-Key reused with a different body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Inserted; confirm failed. Body includes job id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableResponse'
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      summary: List jobs by status
+      parameters:
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [dead]
+          description: Only `dead` is supported
+      responses:
+        '200':
+          description: Job list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobListResponse'
+        '400':
+          description: Unsupported filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/jobs/{id}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      summary: Get job by id
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Public job view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/jobs/{id}/replay:
+    post:
+      operationId: replayJob
+      tags: [jobs]
+      summary: Replay a dead job
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '202':
+          description: Requeued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplayJobResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Job is not dead
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Confirm failed. Body includes job id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableResponse'
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Liveness and dependency check
+      security: []
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: A dependency is down
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthFailureResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Static token from HOPPER_API_TOKEN
+  parameters:
+    ProducerIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
+      description: Producer dedupe key. Unique per distinct enqueue.
+    JobId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-f0-9]{24}$'
+      description: 24-char lowercase hex id
+  schemas:
+    CreateJobRequest:
+      type: object
+      additionalProperties: false
+      required: [type, target, payload]
+      properties:
+        type:
+          type: string
+          enum: [http_post]
+        target:
+          type: string
+          format: uri
+          maxLength: 2048
+          examples:
+            - https://example.invalid/webhook
+        payload:
+          type: object
+          additionalProperties: true
+        max_attempts:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+    CreateJobResponse:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+          pattern: '^[a-f0-9]{24}$'
+    ReplayJobResponse:
+      type: object
+      additionalProperties: false
+      required: [id, cycle, status]
+      properties:
+        id:
+          type: string
+          pattern: '^[a-f0-9]{24}$'
+        cycle:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum: [queued]
+    JobListResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/JobSummary'
+    JobSummary:
+      type: object
+      additionalProperties: false
+      required: [id, type, status, cycle, attempts_done, max_attempts, updated_at]
+      properties:
+        id:
+          type: string
+          pattern: '^[a-f0-9]{24}$'
+        type:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        cycle:
+          type: integer
+        attempts_done:
+          type: integer
+        max_attempts:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+    Job:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - type
+        - target
+        - payload
+        - status
+        - cycle
+        - attempts_done
+        - max_attempts
+        - attempts
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          pattern: '^[a-f0-9]{24}$'
+        type:
+          type: string
+          enum: [http_post]
+        target:
+          type: string
+          format: uri
+        payload:
+          type: object
+          additionalProperties: true
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        cycle:
+          type: integer
+          minimum: 0
+        attempts_done:
+          type: integer
+          minimum: 0
+        max_attempts:
+          type: integer
+          minimum: 1
+          maximum: 20
+        attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attempt'
+        replay_history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReplayEvent'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    JobStatus:
+      type: string
+      enum: [queued, running, succeeded, dead]
+    Attempt:
+      type: object
+      additionalProperties: false
+      required: [cycle, attempt, at, duration_ms, outcome]
+      properties:
+        cycle:
+          type: integer
+          minimum: 0
+        attempt:
+          type: integer
+          minimum: 1
+        at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+          minimum: 0
+        outcome:
+          type: string
+          enum: [success, failure]
+        failure_class:
+          type: string
+          enum: [retryable, terminal_http, non_retryable_local]
+          description: Required when outcome is failure
+        status_code:
+          type: integer
+          minimum: 100
+          maximum: 599
+        error:
+          type: string
+          maxLength: 1024
+      allOf:
+        - if:
+            properties:
+              outcome:
+                const: failure
+            required: [outcome]
+          then:
+            required: [failure_class, error]
+    ReplayEvent:
+      type: object
+      additionalProperties: false
+      required: [at, from_cycle, to_cycle]
+      properties:
+        at:
+          type: string
+          format: date-time
+        from_cycle:
+          type: integer
+        to_cycle:
+          type: integer
+        by:
+          type: string
+          description: Optional operator id
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error, code]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - validation_failed
+            - unauthorized
+            - not_found
+            - conflict
+            - idempotency_conflict
+            - payload_too_large
+            - service_unavailable
+            - rate_limited
+    ServiceUnavailableResponse:
+      type: object
+      additionalProperties: false
+      required: [id, error, code]
+      properties:
+        id:
+          type: string
+          pattern: '^[a-f0-9]{24}$'
+          description: Existing job id
+        error:
+          type: string
+        code:
+          type: string
+          enum: [service_unavailable]
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: HTTP 200 only
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [up, down]
+    HealthFailureResponse:
+      type: object
+      additionalProperties: false
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [unavailable]
+          description: HTTP 503 only
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [up, down]

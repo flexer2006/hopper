@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hopper.local/schemas/job-document.schema.json",
+  "title": "HopperJobDocument",
+  "description": "MongoDB jobs collection (MSG-DOC). Internal fields excluded from public API.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "_id", "type", "target", "payload", "status", "cycle", "attempts_done",
+    "max_attempts", "attempts", "delivery_starts", "producer_idempotency_key",
+    "request_hash", "dispatch", "replay_count", "created_at", "updated_at"
+  ],
+  "properties": {
+    "_id": { "type": "string", "pattern": "^[a-f0-9]{24}$" },
+    "type": { "type": "string", "enum": ["http_post"] },
+    "target": { "type": "string", "format": "uri", "maxLength": 2048 },
+    "payload": { "type": "object", "additionalProperties": true },
+    "status": { "type": "string", "enum": ["queued", "running", "succeeded", "dead"] },
+    "cycle": { "type": "integer", "minimum": 0 },
+    "attempts_done": { "type": "integer", "minimum": 0 },
+    "delivery_starts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "HTTP delivery tries started in current cycle (includes in-flight); incremented at claim"
+    },
+    "max_attempts": { "type": "integer", "minimum": 1, "maximum": 20 },
+    "attempts": {
+      "type": "array",
+      "items": { "$ref": "attempt-record.schema.json" }
+    },
+    "not_before": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Job-level earliest worker HTTP for retries; absent means immediately due"
+    },
+    "producer_idempotency_key": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "request_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "dispatch": { "$ref": "dispatch-intent.schema.json" },
+    "dispatch_history": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "$ref": "dispatch-intent.schema.json" }
+    },
+    "replay_history": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "from_cycle", "to_cycle"],
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "from_cycle": { "type": "integer", "minimum": 0 },
+          "to_cycle": { "type": "integer", "minimum": 0 },
+          "by": { "type": "string", "maxLength": 128 }
+        }
+      }
+    },
+    "replay_count": { "type": "integer", "minimum": 0, "maximum": 20 },
+    "fence_token": { "type": "string", "maxLength": 64 },
+    "claimed_by": { "type": "string", "maxLength": 128 },
+    "claim_expires_at": { "type": "string", "format": "date-time" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hopper.local/schemas/dlq-message.schema.json",
+  "title": "HopperDLQMessage",
+  "description": "RabbitMQ jobs.dlq reference (MSG-DLQ). Known-job terminal paths use outbox; ghost/malformed use direct publish (FR-06a).",
+  "oneOf": [
+    {
+      "title": "KnownJobTerminal",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_id", "cycle", "reason"],
+      "properties": {
+        "job_id": { "type": "string", "pattern": "^[a-f0-9]{24}$" },
+        "cycle": { "type": "integer", "minimum": 0 },
+        "reason": {
+          "type": "string",
+          "enum": ["attempts_exhausted", "terminal_http", "non_retryable_local", "operator_manual"]
+        },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    {
+      "title": "GhostMissingDocument",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_id", "reason"],
+      "properties": {
+        "job_id": { "type": "string", "pattern": "^[a-f0-9]{24}$" },
+        "reason": { "const": "missing_document" },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    {
+      "title": "MalformedWithoutJob",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "body_sha256", "body_size"],
+      "properties": {
+        "reason": { "const": "malformed_message" },
+        "body_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "body_size": { "type": "integer", "minimum": 0 },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hopper.local/schemas/enqueue-message.schema.json",
+  "title": "HopperEnqueueMessage",
+  "description": "RabbitMQ jobs queue body (MSG-ENQUEUE). ONLY job_id — no cycle, no payload (FR-06a, ADR-003).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["job_id"],
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{24}$"
+    }
+  }
+}

@@ -41,10 +41,36 @@ func moduleRoot(t *testing.T) string {
 	return ""
 }
 
+func resolveProductDocs(moduleRoot string, parts ...string) (string, bool) {
+	candidates := []string{
+		filepath.Join(append([]string{moduleRoot, "..", "docs"}, parts...)...),
+		filepath.Join(append([]string{moduleRoot, "docs"}, parts...)...),
+	}
+
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path, true
+		}
+	}
+
+	return "", false
+}
+
+func productDocs(t *testing.T, parts ...string) string {
+	t.Helper()
+
+	path, ok := resolveProductDocs(moduleRoot(t), parts...)
+	if !ok {
+		t.Fatalf("product docs not found for %s (tried ../docs then module docs/)", filepath.Join(parts...))
+	}
+
+	return path
+}
+
 func TestEnqueueGoldenMatchesSchemaATCONTRACT02(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "..", "docs", "contracts", "enqueue-message.schema.json"))
+	raw, err := os.ReadFile(productDocs(t, "contracts", "enqueue-message.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +148,7 @@ func TestEnqueueGoldenMatchesSchemaATCONTRACT02(t *testing.T) {
 func TestDLQGoldenMatchesSchemaATCONTRACT04(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "..", "docs", "contracts", "dlq-message.schema.json"))
+	raw, err := os.ReadFile(productDocs(t, "contracts", "dlq-message.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

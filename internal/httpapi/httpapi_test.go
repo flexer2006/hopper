@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.uber.org/goleak"
+	"go.uber.org/zap"
 
 	"github.com/flexer2006/hopper/internal/deliver"
 	"github.com/flexer2006/hopper/internal/dispatch"
@@ -105,8 +106,14 @@ func (c *frozenClock) add(d time.Duration) {
 	c.ts = c.ts.Add(d)
 }
 
-func newFixture(t *testing.T) apiFixture {
-	t.Helper()
+func newFixture(tb testing.TB) apiFixture {
+	tb.Helper()
+
+	return newFixtureLog(tb, nil)
+}
+
+func newFixtureLog(tb testing.TB, log *zap.Logger) apiFixture {
+	tb.Helper()
 
 	clk := &frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
 	st := persist.NewMemory(clk.now, 30*time.Second)
@@ -117,6 +124,7 @@ func newFixture(t *testing.T) apiFixture {
 		Limit:    8,
 	}, nil)
 	h := httpapi.New(httpapi.Options{
+		Log:             log,
 		Now:             clk.now,
 		Enqueue:         enqueue.NewService(st, rel),
 		Query:           query.NewService(st),
@@ -142,10 +150,10 @@ func (s errReplayStore) Replay(context.Context, replay.Request) (replay.Result, 
 	return replay.Result{}, s.err
 }
 
-func doReq(t *testing.T, h http.Handler, method, path, token, key, body string) *http.Response {
-	t.Helper()
+func doReq(tb testing.TB, h http.Handler, method, path, token, key, body string) *http.Response {
+	tb.Helper()
 
-	req := httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
+	req := httptest.NewRequestWithContext(tb.Context(), method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -161,12 +169,12 @@ func doReq(t *testing.T, h http.Handler, method, path, token, key, body string) 
 	res := rec.Result()
 	raw, err := io.ReadAll(res.Body)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 
 	closeErr := res.Body.Close()
 	if closeErr != nil {
-		t.Fatal(closeErr)
+		tb.Fatal(closeErr)
 	}
 
 	res.Body = io.NopCloser(bytes.NewReader(raw))

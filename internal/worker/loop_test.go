@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,6 +15,9 @@ import (
 	"time"
 
 	"go.uber.org/goleak"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/flexer2006/hopper/internal/broker"
 	"github.com/flexer2006/hopper/internal/deliver"
@@ -251,6 +255,59 @@ func TestProcessSuccessAcksAfterMongo(t *testing.T) {
 	got := getJob(t, st)
 	if got.Status != domain.StatusSucceeded || got.AttemptsDone != 1 {
 		t.Fatalf("job = %+v", got)
+	}
+}
+
+func TestProcessLogsOmitPayloadATSEC09(t *testing.T) {
+	t.Parallel()
+
+	const canary = "CANARY_HOP15_PAYLOAD_9f3a"
+
+	clk := newClock()
+	st := newStore(clk)
+	err := st.Insert(t.Context(), enqueue.Record{
+		Payload:     []byte(`{"secret":"` + canary + `"}`),
+		ID:          testJobID,
+		Target:      testTarget,
+		ProducerKey: testKey,
+		RequestHash: testHash,
+		Type:        domain.TypeHTTPPost,
+		MaxAttempts: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	core, logs := observer.New(zapcore.InfoLevel)
+	httpStub := &stubHTTP{code: http.StatusOK}
+	wkr := worker.New(st, httpStub, nil, &stubRelay{}, zap.New(core), worker.Config{
+		Now:      clk.now,
+		WorkerID: "w1",
+	})
+	deliv := &memDelivery{body: jobBody(t)}
+	err = wkr.Process(t.Context(), deliv)
+	if err != nil {
+		t.Fatalf("Process() err = %v", err)
+	}
+
+	got := logs.FilterMessage("delivery")
+	if got.Len() < 1 {
+		t.Fatal("expected delivery log")
+	}
+
+	entry := got.All()[0]
+	fields := entry.ContextMap()
+	for _, key := range []string{"job_id", "cycle", "attempt", "outcome"} {
+		if _, ok := fields[key]; !ok {
+			t.Fatalf("missing field %s in %v", key, fields)
+		}
+	}
+
+	blob := fmt.Sprintf("%s %v", entry.Message, fields)
+	for _, leak := range []string{canary, testTarget, "Authorization", "Bearer"} {
+		if strings.Contains(blob, leak) {
+			t.Fatalf("delivery log leaked %q: %s", leak, blob)
+		}
 	}
 }
 

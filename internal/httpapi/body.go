@@ -1,10 +1,8 @@
 package httpapi
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -41,34 +39,59 @@ func requestHash(raw []byte) string {
 }
 
 func jsonTooDeep(raw []byte, maxDepth int) bool {
-	dec := json.NewDecoder(bytes.NewReader(raw))
 	depth := 0
 
-	for {
-		tok, err := dec.Token()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return depth != 0
+	i := 0
+
+	for i < len(raw) {
+		switch raw[i] {
+		case '"':
+			next := skipJSONString(raw, i+1)
+			if next < 0 {
+				return true
 			}
 
-			return true
-		}
-
-		delim, ok := tok.(json.Delim)
-		if !ok {
-			continue
-		}
-
-		switch delim {
+			i = next
 		case '{', '[':
 			depth++
 			if depth > maxDepth {
 				return true
 			}
+
+			i++
 		case '}', ']':
 			depth--
+			if depth < 0 {
+				return true
+			}
+
+			i++
 		default:
-			continue
+			i++
 		}
 	}
+
+	return depth != 0
+}
+
+func skipJSONString(raw []byte, i int) int {
+	for i < len(raw) {
+		if raw[i] == '\\' {
+			if i+1 >= len(raw) {
+				return -1
+			}
+
+			i += 2
+
+			continue
+		}
+
+		if raw[i] == '"' {
+			return i + 1
+		}
+
+		i++
+	}
+
+	return -1
 }

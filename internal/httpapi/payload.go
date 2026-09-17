@@ -18,20 +18,12 @@ func boundPayload(raw json.RawMessage, limit int) ([]byte, error) {
 		return nil, errJSONSyntax
 	}
 
-	var obj map[string]any
-
-	err := json.Unmarshal(trim, &obj)
-	if err != nil {
-		return nil, errJSONSyntax
-	}
-
-	encoded, err := json.Marshal(obj)
-	if err != nil {
-		return nil, errJSONSyntax
-	}
-
-	if len(encoded) > limit {
+	if len(trim) > limit {
 		return nil, errPayloadTooLarge
+	}
+
+	if !json.Valid(trim) {
+		return nil, errJSONSyntax
 	}
 
 	return trim, nil

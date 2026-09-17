@@ -1,6 +1,6 @@
 //go:build integration
 
-package hopper_test
+package integration_test
 
 import (
 	"os"

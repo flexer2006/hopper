@@ -1,10 +1,10 @@
 package worker
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"unicode/utf8"
 )
@@ -21,17 +21,10 @@ const (
 )
 
 func parseJobID(body []byte) (string, error) {
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-
 	var msg enqueueBody
 
-	err := decoder.Decode(&msg)
+	err := jsonv2.Unmarshal(body, &msg, json.DefaultOptionsV1(), jsonv2.RejectUnknownMembers(true))
 	if err != nil {
-		return "", ErrMalformed
-	}
-
-	if decoder.More() {
 		return "", ErrMalformed
 	}
 

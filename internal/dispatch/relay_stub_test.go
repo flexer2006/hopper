@@ -3,6 +3,8 @@ package dispatch_test
 import (
 	"context"
 	"errors"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +18,7 @@ type stubJobs struct {
 	healing    []dispatch.Intent
 	expired    []string
 	recovered  []string
+	mu         sync.Mutex
 	listErr    error
 	healList   error
 	leaseErr   error
@@ -31,13 +34,17 @@ func (s *stubJobs) MarkPublished(context.Context, string, int) error {
 }
 
 func (s *stubJobs) RecoverExpiredLease(_ context.Context, id string) (bool, error) {
+	s.mu.Lock()
 	s.recovered = append(s.recovered, id)
+	err := s.recoverErr
+	ok := s.recoverOK
+	s.mu.Unlock()
 
-	if s.recoverErr != nil {
-		return false, s.recoverErr
+	if err != nil {
+		return false, err
 	}
 
-	return s.recoverOK, nil
+	return ok, nil
 }
 
 func (s *stubJobs) ListExpiredLeases(context.Context, int) ([]string, error) {
@@ -66,6 +73,13 @@ func (s *stubJobs) StartHealing(context.Context, string, int, time.Duration) (di
 	}
 
 	return s.healing[0], nil
+}
+
+func (s *stubJobs) snapshotRecovered() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return slices.Clone(s.recovered)
 }
 
 func TestRelayTickListErrors(t *testing.T) {

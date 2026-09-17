@@ -1,10 +1,10 @@
 package broker
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 )
 
@@ -35,18 +35,11 @@ func MarshalEnqueue(jobID string) ([]byte, error) {
 }
 
 func ParseEnqueue(body []byte) (string, error) {
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-
 	var msg EnqueueMessage
 
-	err := decoder.Decode(&msg)
+	err := jsonv2.Unmarshal(body, &msg, json.DefaultOptionsV1(), jsonv2.RejectUnknownMembers(true))
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrInvalidEnqueue, err)
-	}
-
-	if decoder.More() {
-		return "", ErrInvalidEnqueue
 	}
 
 	if !validHex(msg.JobID, hexIDLen) {
@@ -122,18 +115,11 @@ func MarshalMalformedDLQ(raw []byte) ([]byte, error) {
 }
 
 func ParseDLQ(body []byte) (DLQMessage, error) {
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-
 	var msg DLQMessage
 
-	err := decoder.Decode(&msg)
+	err := jsonv2.Unmarshal(body, &msg, json.DefaultOptionsV1(), jsonv2.RejectUnknownMembers(true))
 	if err != nil {
 		return DLQMessage{}, fmt.Errorf("%w: %w", ErrInvalidDLQ, err)
-	}
-
-	if decoder.More() {
-		return DLQMessage{}, ErrInvalidDLQ
 	}
 
 	err = validateDLQ(&msg)

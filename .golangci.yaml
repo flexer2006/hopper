@@ -148,6 +148,8 @@ linters:
     importas:
       no-extra-aliases: true
       alias:
+        - pkg: encoding/json/v2
+          alias: jsonv2
         - pkg: github.com/rabbitmq/amqp091-go
           alias: amqp
     ireturn:

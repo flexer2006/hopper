@@ -1,8 +1,8 @@
 package httpapi
 
 import (
-	"bytes"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"net/http"
 
@@ -157,17 +157,10 @@ func (h *Handler) parseCreate(r *http.Request) ([]byte, enqueue.Record, error) {
 		return nil, enqueue.Record{}, errJSONDepth
 	}
 
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-
 	var req createRequest
 
-	err = dec.Decode(&req)
+	err = jsonv2.Unmarshal(raw, &req, json.DefaultOptionsV1(), jsonv2.RejectUnknownMembers(true))
 	if err != nil {
-		return nil, enqueue.Record{}, errJSONSyntax
-	}
-
-	if dec.More() {
 		return nil, enqueue.Record{}, errJSONSyntax
 	}
 

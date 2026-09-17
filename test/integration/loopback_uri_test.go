@@ -1,4 +1,4 @@
-package hopper_test
+package integration_test
 
 import (
 	"net/url"

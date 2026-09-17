@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"go.uber.org/goleak"
@@ -112,6 +113,15 @@ func newRelay(t *testing.T, st *persist.Store, pub dispatch.Publisher) *dispatch
 		Healing:  30 * time.Second,
 		Limit:    dispatch.DefaultLimit,
 	}, zap.NewNop())
+}
+
+func stopRelay(t *testing.T, stop func(context.Context) error) {
+	t.Helper()
+
+	err := stop(context.WithoutCancel(t.Context()))
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRelayPendingPublishMarksPublished(t *testing.T) {
@@ -392,6 +402,62 @@ func TestRelayStartStopNoLeak(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestRelayLoopTicksPendingOnInterval(t *testing.T) { //nolint:paralleltest // synctest.Test forbids T.Parallel
+	synctest.Test(t, func(t *testing.T) {
+		st := persist.NewMemory(newClock().now, 30*time.Second)
+		err := st.Insert(t.Context(), testRecord())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		pub := new(recPub)
+		rel := dispatch.NewRelay(st, pub, dispatch.Config{
+			Interval: time.Second,
+			Healing:  30 * time.Second,
+			Lease:    time.Hour,
+			Limit:    8,
+		}, zap.NewNop())
+		stop := rel.Start(t.Context())
+		defer stopRelay(t, stop)
+
+		synctest.Wait()
+		if pub.last().n != 0 {
+			t.Fatal("published before first interval tick")
+		}
+
+		synctest.Sleep(time.Second)
+		hit := pub.last()
+		if hit.n != 1 || hit.queue != "jobs" || hit.id != testJobID {
+			t.Fatalf("after interval publish = %+v", hit)
+		}
+	})
+}
+
+func TestRelayLoopTicksLeasesOnPeriod(t *testing.T) { //nolint:paralleltest // synctest.Test forbids T.Parallel
+	synctest.Test(t, func(t *testing.T) {
+		jobs := &stubJobs{expired: []string{testJobID}, recoverOK: true}
+		rel := dispatch.NewRelay(jobs, new(recPub), dispatch.Config{
+			Interval: time.Hour,
+			Healing:  30 * time.Second,
+			Lease:    time.Second,
+			Limit:    8,
+		}, zap.NewNop())
+		stop := rel.Start(t.Context())
+		defer stopRelay(t, stop)
+
+		synctest.Wait()
+		if got := jobs.snapshotRecovered(); len(got) != 0 {
+			t.Fatalf("recovered before first lease tick: %v", got)
+		}
+
+		synctest.Sleep(time.Second)
+		got := jobs.snapshotRecovered()
+		if len(got) != 1 || got[0] != testJobID {
+			t.Fatalf("recovered = %v", got)
+		}
+	})
 }
 
 func TestRelayPublishImmediate(t *testing.T) {

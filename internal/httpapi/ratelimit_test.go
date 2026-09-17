@@ -44,6 +44,11 @@ func TestJSONTooDeep(t *testing.T) {
 	if !httpapi.JSONTooDeep([]byte(`{`), 8) {
 		t.Fatal("truncated accepted")
 	}
+
+	quoted := []byte(`{"a":"{b{c{d{e"}`)
+	if httpapi.JSONTooDeep(quoted, 2) {
+		t.Fatal("braces inside strings counted as depth")
+	}
 }
 
 func TestXFFHopFromRight(t *testing.T) {

@@ -47,7 +47,7 @@ Outbound: `Idempotency-Key: hopper/{job_id}/{cycle}/{attempt}`.
 
 | Role      | Package                                                              |
 |:----------|:---------------------------------------------------------------------|
-| Language  | [Go 1.27](https://go.dev/doc/go1.27)                                 |
+| Language  | [Go](https://go.dev)                                                 |
 | Router    | [chi](https://pkg.go.dev/github.com/go-chi/chi/v5)                   |
 | DI        | [fx](https://pkg.go.dev/go.uber.org/fx)                              |
 | Config    | [config](https://pkg.go.dev/go.uber.org/config)                      |

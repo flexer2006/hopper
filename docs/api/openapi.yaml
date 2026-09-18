@@ -4,8 +4,8 @@ info:
   version: 0.2.0
   description: Outbound HTTP job delivery. POST /v1/jobs needs Idempotency-Key; 202 after confirm, 503 if confirm fails.
   license:
-    name: Proprietary
-    identifier: LicenseRef-Proprietary
+    name: MIT
+    identifier: MIT
 servers:
   - url: http://localhost:8080
     description: Local lab

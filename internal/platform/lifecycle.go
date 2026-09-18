@@ -34,6 +34,21 @@ func StartStop(ctx context.Context, app Graph) error {
 	return app.Stop(ctx)
 }
 
+func StartStopCycles(ctx context.Context, app Graph, n int) error {
+	if n < 1 {
+		n = 1
+	}
+
+	for cycle := range n {
+		err := StartStop(ctx, app)
+		if err != nil {
+			return fmt.Errorf("cycle %d start/stop: %w", cycle, err)
+		}
+	}
+
+	return nil
+}
+
 func RunProcess(name string, app Process) error {
 	err := app.Err()
 	if err != nil {

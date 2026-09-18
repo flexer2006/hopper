@@ -127,16 +127,12 @@ func stopRelay(t *testing.T, stop func(context.Context) error) {
 func TestRelayPendingPublishMarksPublished(t *testing.T) {
 	t.Parallel()
 
-	st := persist.NewMemory(newClock().now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := seededStore(t)
 
 	pub := new(recPub)
 	rel := newRelay(t, st, pub)
 
-	err = rel.Tick(t.Context())
+	err := rel.Tick(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,16 +151,12 @@ func TestRelayPendingPublishMarksPublished(t *testing.T) {
 func TestRelayConfirmFailLeavesPending(t *testing.T) {
 	t.Parallel()
 
-	st := persist.NewMemory(newClock().now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := seededStore(t)
 
 	pub := &recPub{err: errors.New("nack")}
 	rel := newRelay(t, st, pub)
 
-	err = rel.Tick(t.Context())
+	err := rel.Tick(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,19 +170,9 @@ func TestRelayConfirmFailLeavesPending(t *testing.T) {
 func TestRelayDueRetryPromotesToJobs(t *testing.T) {
 	t.Parallel()
 
-	clk := newClock()
-	st := persist.NewMemory(clk.now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
+	st, clk, out := claimedJob(t)
 
-	out, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+	err := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
 		ID:           testJobID,
 		FenceToken:   out.FenceToken,
 		Queue:        "jobs.delay.1s",
@@ -221,18 +203,9 @@ func TestRelayDueRetryPromotesToJobs(t *testing.T) {
 func TestRelayFutureRetryDoesNotPublishDelayQueue(t *testing.T) {
 	t.Parallel()
 
-	st := persist.NewMemory(newClock().now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
+	st, _, out := claimedJob(t)
 
-	out, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+	err := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
 		ID:           testJobID,
 		FenceToken:   out.FenceToken,
 		Queue:        "jobs.delay.1s",
@@ -261,14 +234,9 @@ func TestRelayFutureRetryDoesNotPublishDelayQueue(t *testing.T) {
 func TestRelayHealsDuePublished(t *testing.T) {
 	t.Parallel()
 
-	clk := newClock()
-	st := persist.NewMemory(clk.now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
+	st, clk := seededClock(t)
 
-	err = st.MarkPublished(t.Context(), testJobID, 1)
+	err := st.MarkPublished(t.Context(), testJobID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,19 +265,9 @@ func TestRelayHealsDuePublished(t *testing.T) {
 func TestRelayDoesNotHealFutureNotBefore(t *testing.T) {
 	t.Parallel()
 
-	clk := newClock()
-	st := persist.NewMemory(clk.now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
+	st, clk, out := claimedJob(t)
 
-	out, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+	err := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
 		ID:           testJobID,
 		FenceToken:   out.FenceToken,
 		Queue:        "jobs.delay.60s",
@@ -368,15 +326,11 @@ func (p *bumpPub) PublishJob(ctx context.Context, _, _ string) error {
 func TestRelayStaleConfirmKeepsNewerPending(t *testing.T) {
 	t.Parallel()
 
-	st := persist.NewMemory(newClock().now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := seededStore(t)
 
 	rel := newRelay(t, st, &bumpPub{st: st})
 
-	err = rel.Tick(t.Context())
+	err := rel.Tick(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,11 +360,7 @@ func TestRelayStartStopNoLeak(t *testing.T) {
 
 func TestRelayLoopTicksPendingOnInterval(t *testing.T) { //nolint:paralleltest // synctest.Test forbids T.Parallel
 	synctest.Test(t, func(t *testing.T) {
-		st := persist.NewMemory(newClock().now, 30*time.Second)
-		err := st.Insert(t.Context(), testRecord())
-		if err != nil {
-			t.Fatal(err)
-		}
+		st := seededStore(t)
 
 		pub := new(recPub)
 		rel := dispatch.NewRelay(st, pub, dispatch.Config{
@@ -463,16 +413,12 @@ func TestRelayLoopTicksLeasesOnPeriod(t *testing.T) { //nolint:paralleltest // s
 func TestRelayPublishImmediate(t *testing.T) {
 	t.Parallel()
 
-	st := persist.NewMemory(newClock().now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := seededStore(t)
 
 	pub := new(recPub)
 	rel := newRelay(t, st, pub)
 
-	err = rel.Publish(t.Context(), dispatch.Intent{
+	err := rel.Publish(t.Context(), dispatch.Intent{
 		ID:         testJobID,
 		Queue:      "jobs",
 		Kind:       dispatch.IntentEnqueue,
@@ -500,19 +446,9 @@ func TestNewRelayDefaults(t *testing.T) {
 func TestRelayTickSkipsNotDueRetry(t *testing.T) {
 	t.Parallel()
 
-	clk := newClock()
-	st := persist.NewMemory(clk.now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
+	st, _, claimed := claimedJob(t)
 
-	claimed, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+	err := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
 		ID:           testJobID,
 		FenceToken:   claimed.FenceToken,
 		Queue:        "jobs.delay.60s",
@@ -540,19 +476,9 @@ func TestRelayTickSkipsNotDueRetry(t *testing.T) {
 func TestRelayTickPromotesDueRetry(t *testing.T) {
 	t.Parallel()
 
-	clk := newClock()
-	st := persist.NewMemory(clk.now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
+	st, clk, claimed := claimedJob(t)
 
-	claimed, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+	err := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
 		ID:           testJobID,
 		FenceToken:   claimed.FenceToken,
 		Queue:        "jobs.delay.1s",

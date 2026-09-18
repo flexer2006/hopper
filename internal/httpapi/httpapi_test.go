@@ -182,6 +182,33 @@ func doReq(tb testing.TB, h http.Handler, method, path, token, key, body string)
 	return res
 }
 
+func claimJob(t *testing.T, fx apiFixture, id string) deliver.ClaimOut {
+	t.Helper()
+
+	out, err := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: id, WorkerID: "w1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return out
+}
+
+func claimDead(t *testing.T, fx apiFixture, id string) {
+	t.Helper()
+
+	out := claimJob(t, fx, id)
+	err := fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
+		ID:           id,
+		FenceToken:   out.FenceToken,
+		Status:       domain.StatusDead,
+		AttemptsDone: 1,
+		Cycle:        out.Cycle,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func decodeErr(t *testing.T, res *http.Response) errBody {
 	t.Helper()
 
@@ -380,11 +407,7 @@ func TestCreateJobPendingRetryDoesNotRepublishJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	out := claimJob(t, fx, body.ID)
 	err = fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
 		ID:           body.ID,
 		FenceToken:   out.FenceToken,
@@ -509,21 +532,7 @@ func TestGetAndListDead(t *testing.T) {
 		t.Fatalf("list status = %d", list.StatusCode)
 	}
 
-	out, err := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
-		ID:           body.ID,
-		FenceToken:   out.FenceToken,
-		Status:       domain.StatusDead,
-		AttemptsDone: 1,
-		Cycle:        out.Cycle,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	claimDead(t, fx, body.ID)
 
 	deadList := doReq(t, fx.h, http.MethodGet, "/v1/jobs?status=dead", platform.ValidToken(), "", "")
 	defer closeBody(t, deadList)
@@ -578,21 +587,7 @@ func TestReplayDeadAndConflict(t *testing.T) {
 		t.Fatalf("replay queued status=%d body=%+v", queued.StatusCode, got)
 	}
 
-	out, err := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
-		ID:           body.ID,
-		FenceToken:   out.FenceToken,
-		Status:       domain.StatusDead,
-		AttemptsDone: 1,
-		Cycle:        out.Cycle,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	claimDead(t, fx, body.ID)
 
 	replayed := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+body.ID+"/replay", platform.ValidToken(), "", "")
 	defer closeBody(t, replayed)
@@ -654,21 +649,7 @@ func TestReplayConfirmFail503(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
-		ID:           body.ID,
-		FenceToken:   out.FenceToken,
-		Status:       domain.StatusDead,
-		AttemptsDone: 1,
-		Cycle:        out.Cycle,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	claimDead(t, fx, body.ID)
 
 	fx.pub.err = errors.New("nack")
 
@@ -693,21 +674,7 @@ func TestReplayCapConflict409(t *testing.T) {
 	}
 
 	for range domain.ReplayCap {
-		out, claimErr := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
-		if claimErr != nil {
-			t.Fatalf("Claim() err = %v", claimErr)
-		}
-
-		deadErr := fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
-			ID:           body.ID,
-			FenceToken:   out.FenceToken,
-			Status:       domain.StatusDead,
-			AttemptsDone: 1,
-			Cycle:        out.Cycle,
-		})
-		if deadErr != nil {
-			t.Fatalf("dead err = %v", deadErr)
-		}
+		claimDead(t, fx, body.ID)
 
 		_, replayErr := fx.st.Replay(t.Context(), replay.Request{ID: body.ID, By: "ops"})
 		if replayErr != nil {
@@ -715,11 +682,7 @@ func TestReplayCapConflict409(t *testing.T) {
 		}
 	}
 
-	out, err := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	out := claimJob(t, fx, body.ID)
 	err = fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
 		ID:           body.ID,
 		FenceToken:   out.FenceToken,
@@ -751,21 +714,7 @@ func TestGetJobIncludesReplayHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := fx.st.Claim(t.Context(), deliver.ClaimIn{ID: body.ID, WorkerID: "w1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
-		ID:           body.ID,
-		FenceToken:   out.FenceToken,
-		Status:       domain.StatusDead,
-		AttemptsDone: 1,
-		Cycle:        out.Cycle,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	claimDead(t, fx, body.ID)
 
 	replayed := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+body.ID+"/replay", platform.ValidToken(), "", "")
 	closeBody(t, replayed)

@@ -160,3 +160,37 @@ func TestStorePingPropagatesDriverError(t *testing.T) {
 		t.Fatalf("Ping() err = %v, want %v", err, want)
 	}
 }
+
+func TestBindOpenCloseStartWrapsOpen(t *testing.T) {
+	t.Parallel()
+
+	store := new(Store)
+	hooks := store.BindOpenClose(Options{}, 0)
+	err := hooks.Start(t.Context())
+	if !errors.Is(err, ErrStandalone) {
+		t.Fatalf("start err = %v, want ErrStandalone", err)
+	}
+
+	err = hooks.Stop(t.Context())
+	if err != nil {
+		t.Fatalf("stop on unopened store = %v", err)
+	}
+}
+
+func TestBindOpenCloseStopDisconnects(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeClient{}
+	store := new(Store)
+	store.client = client
+
+	hooks := store.BindOpenClose(Options{}, time.Second)
+	err := hooks.Stop(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if client.disconnects != 1 {
+		t.Fatalf("disconnects = %d, want 1", client.disconnects)
+	}
+}

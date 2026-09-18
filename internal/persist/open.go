@@ -18,7 +18,12 @@ type Options struct {
 	Lease      time.Duration
 }
 
-const openCleanupTimeout = 5 * time.Second
+type OpenClose struct {
+	Start func(context.Context) error
+	Stop  func(context.Context) error
+}
+
+const DefaultCloseTimeout = 5 * time.Second
 
 func Open(ctx context.Context, opts Options) (*Store, error) {
 	opts = withOpenDefaults(opts)
@@ -36,7 +41,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		return store, nil
 	}
 
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openCleanupTimeout)
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), DefaultCloseTimeout)
 	defer cancel()
 
 	disErr := client.Disconnect(cleanupCtx)
@@ -64,6 +69,29 @@ func (s *Store) Open(ctx context.Context, opts Options) error {
 	s.adopt(opened)
 
 	return nil
+}
+
+func (s *Store) BindOpenClose(opts Options, closeTimeout time.Duration) OpenClose {
+	if closeTimeout <= 0 {
+		closeTimeout = DefaultCloseTimeout
+	}
+
+	return OpenClose{
+		Start: func(ctx context.Context) error {
+			err := s.Open(ctx, opts)
+			if err != nil {
+				return fmt.Errorf("mongo open: %w", err)
+			}
+
+			return nil
+		},
+		Stop: func(ctx context.Context) error {
+			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), closeTimeout)
+			defer cancel()
+
+			return s.Close(stopCtx)
+		},
+	}
 }
 
 func (s *Store) adopt(opened *Store) {

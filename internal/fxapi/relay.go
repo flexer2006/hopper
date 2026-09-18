@@ -1,8 +1,6 @@
 package fxapi
 
 import (
-	"context"
-
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
@@ -54,17 +52,8 @@ type relayLife struct {
 }
 
 func newRelayHolder(in relayIn) *relayHolder {
-	if in.Jobs == nil || in.Publisher == nil || in.Cfg == nil {
-		return new(relayHolder)
-	}
-
-	cfg := new(dispatch.Config)
-	cfg.Interval = in.Cfg.RelayInterval
-	cfg.Healing = in.Cfg.HealingInterval
-	cfg.Lease = in.Cfg.LeaseScanInterval
-
 	holder := new(relayHolder)
-	holder.relay = dispatch.NewRelay(in.Jobs, in.Publisher, *cfg, in.Log)
+	holder.relay = dispatch.NewRelayFrom(in.Jobs, in.Publisher, in.Cfg, in.Log)
 
 	return holder
 }
@@ -74,22 +63,8 @@ func startHeldRelay(in relayLife) {
 		return
 	}
 
-	var stop func(context.Context) error
-
-	in.LC.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			stop = in.Holder.relay.Start(ctx)
-
-			return nil
-		},
-		OnStop: func(ctx context.Context) error {
-			if stop != nil {
-				return stop(ctx)
-			}
-
-			return nil
-		},
-	})
+	hooks := in.Holder.relay.BindStart()
+	in.LC.Append(fx.Hook{OnStart: hooks.Start, OnStop: hooks.Stop})
 }
 
 func newEnqueue(in enqueueIn) *enqueue.Service {

@@ -20,7 +20,7 @@ func TestLiveATINT01TopologyPassiveInspect(t *testing.T) {
 
 	conn, err := broker.Open(cfg.AMQPURI)
 	if err != nil {
-		t.Fatal("amqp unreachable (backend is internal; run HOP-13-operator-inttest.py): " + redactError(err).Error())
+		t.Fatal("amqp unreachable (backend is internal; run the host operator integration script in the hopper-api netns): " + redactError(err).Error())
 	}
 
 	defer conn.Close()

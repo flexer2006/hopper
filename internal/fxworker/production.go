@@ -48,10 +48,7 @@ type amqpChecker struct {
 	resources *workerResources
 }
 
-const (
-	productionConfirmTimeout = 5 * time.Second
-	storeCloseTimeout        = 5 * time.Second
-)
+const productionConfirmTimeout = 5 * time.Second
 
 var errDeliveriesClosed = errors.New("amqp source: deliveries closed")
 
@@ -162,23 +159,8 @@ func requireInfrastructure(cfg *platform.Config) error {
 
 func openStore(lc fx.Lifecycle, cfg *platform.Config) *persist.Store {
 	store := new(persist.Store)
-
-	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			err := store.Open(ctx, mongoOptions(cfg))
-			if err != nil {
-				return fmt.Errorf("mongo open: %w", err)
-			}
-
-			return nil
-		},
-		OnStop: func(ctx context.Context) error {
-			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeCloseTimeout)
-			defer cancel()
-
-			return store.Close(stopCtx)
-		},
-	})
+	hooks := store.BindOpenClose(mongoOptions(cfg), persist.DefaultCloseTimeout)
+	lc.Append(fx.Hook{OnStart: hooks.Start, OnStop: hooks.Stop})
 
 	return store
 }

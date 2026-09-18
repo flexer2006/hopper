@@ -20,6 +20,7 @@ import (
 	"github.com/flexer2006/hopper/internal/domain"
 	"github.com/flexer2006/hopper/internal/httpapi"
 	"github.com/flexer2006/hopper/internal/platform"
+	"github.com/flexer2006/hopper/internal/testutil"
 )
 
 const (
@@ -170,7 +171,7 @@ func TestReplayLogsOmitPayloadATSEC09(t *testing.T) {
 func TestHopperRuntimeUIDATSEC07(t *testing.T) {
 	t.Parallel()
 
-	root := moduleRoot(t)
+	root := testutil.ModuleRoot(t)
 	compose := loadYAML(t, filepath.Join(root, "deploy", "compose.yaml"))
 	common := asMap(t, compose["x-hopper-common"])
 	user, ok := common["user"].(string)

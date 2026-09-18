@@ -106,6 +106,26 @@ func TestStartStop(t *testing.T) {
 	})
 }
 
+func TestStartStopCycles(t *testing.T) {
+	t.Parallel()
+
+	app := new(stubGraph)
+	err := platform.StartStopCycles(t.Context(), app, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !app.started || !app.stopped {
+		t.Fatalf("started=%v stopped=%v", app.started, app.stopped)
+	}
+
+	fail := new(stubGraph{startErr: errors.New("start")})
+	err = platform.StartStopCycles(t.Context(), fail, 2)
+	if err == nil {
+		t.Fatal("want cycle error")
+	}
+}
+
 func TestWriteTempConfig(t *testing.T) {
 	t.Parallel()
 

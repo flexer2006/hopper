@@ -4,13 +4,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
 	"go.uber.org/goleak"
 
 	"github.com/flexer2006/hopper/internal/platform"
+	"github.com/flexer2006/hopper/internal/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -491,7 +491,7 @@ func TestLoadRejectsZeroJSONDepthEnv(t *testing.T) {
 func TestLoadFileAcceptsHopperExampleYAML(t *testing.T) {
 	t.Parallel()
 
-	root := moduleRoot(t)
+	root := testutil.ModuleRoot(t)
 	cfg, err := platform.LoadFile(filepath.Join(root, "deploy", "hopper.example.yaml"))
 	if err != nil {
 		t.Fatalf("LoadFile(hopper.example.yaml) = %v", err)
@@ -620,31 +620,4 @@ func TestLoadFileAppliesWorkerKnobs(t *testing.T) {
 	if cfg.AttemptBudget() != 12*time.Second+6*time.Second+7*time.Second+5*time.Second {
 		t.Fatalf("AttemptBudget() = %s", cfg.AttemptBudget())
 	}
-}
-
-func moduleRoot(t *testing.T) string {
-	t.Helper()
-
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller")
-	}
-
-	dir := filepath.Dir(file)
-	for range 8 {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-
-		dir = parent
-	}
-
-	t.Fatal("go.mod not found")
-
-	return ""
 }

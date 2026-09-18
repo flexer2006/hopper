@@ -75,31 +75,38 @@ func (s *onceSource) Next(ctx context.Context) (worker.Delivery, error) { //noli
 	return nil, ctx.Err()
 }
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func bindWorker(t *testing.T) {
+	t.Helper()
 
-func TestNewAppStartStop(t *testing.T) {
 	path, err := platform.WriteTempConfig(t.TempDir(), platform.ValidToken())
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Setenv(platform.ConfigFileEnv, path)
+}
 
-	err = platform.StartStop(t.Context(), fxworker.NewApp(fx.NopLogger))
+func frozenMemory() *persist.Store {
+	return persist.NewMemory(func() time.Time {
+		return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	}, 30*time.Second)
+}
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
+
+func TestNewAppStartStop(t *testing.T) { //nolint:paralleltest // t.Setenv is process-wide
+	bindWorker(t)
+
+	err := platform.StartStop(t.Context(), fxworker.NewApp(fx.NopLogger))
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNewAppStopTimeoutFromYAML(t *testing.T) {
-	path, err := platform.WriteTempConfig(t.TempDir(), platform.ValidToken())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv(platform.ConfigFileEnv, path)
+	bindWorker(t)
 	t.Setenv(platform.WorkerShutdownTimeoutEnv, "8s")
 
 	app := fxworker.NewApp(fx.NopLogger)
@@ -108,19 +115,12 @@ func TestNewAppStopTimeoutFromYAML(t *testing.T) {
 	}
 }
 
-func TestNewAppConsumeLifecycle(t *testing.T) {
-	path, err := platform.WriteTempConfig(t.TempDir(), platform.ValidToken())
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestNewAppConsumeLifecycle(t *testing.T) { //nolint:paralleltest // t.Setenv is process-wide
+	bindWorker(t)
 
-	t.Setenv(platform.ConfigFileEnv, path)
+	st := frozenMemory()
 
-	st := persist.NewMemory(func() time.Time {
-		return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	}, 30*time.Second)
-
-	err = platform.StartStop(t.Context(), fxworker.NewApp(
+	err := platform.StartStop(t.Context(), fxworker.NewApp(
 		fx.NopLogger,
 		fx.Provide(func() dispatch.Jobs { return st }),
 		fx.Provide(func() deliver.Jobs { return st }),
@@ -132,18 +132,11 @@ func TestNewAppConsumeLifecycle(t *testing.T) {
 	}
 }
 
-func TestNewAppConsumeWithoutPublisherAcks(t *testing.T) {
-	path, err := platform.WriteTempConfig(t.TempDir(), platform.ValidToken())
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestNewAppConsumeWithoutPublisherAcks(t *testing.T) { //nolint:paralleltest // t.Setenv is process-wide
+	bindWorker(t)
 
-	t.Setenv(platform.ConfigFileEnv, path)
-
-	st := persist.NewMemory(func() time.Time {
-		return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	}, 30*time.Second)
-	err = st.Insert(t.Context(), enqueue.Record{
+	st := frozenMemory()
+	err := st.Insert(t.Context(), enqueue.Record{
 		Payload:     []byte(`{"n":1}`),
 		ID:          "aaaaaaaaaaaaaaaaaaaaaaaa",
 		Target:      "https://example.com/hook",
@@ -202,19 +195,12 @@ func TestNewAppConsumeWithoutPublisherAcks(t *testing.T) {
 	}
 }
 
-func TestNewAppRelayLifecycle(t *testing.T) {
-	path, err := platform.WriteTempConfig(t.TempDir(), platform.ValidToken())
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestNewAppRelayLifecycle(t *testing.T) { //nolint:paralleltest // t.Setenv is process-wide
+	bindWorker(t)
 
-	t.Setenv(platform.ConfigFileEnv, path)
+	st := frozenMemory()
 
-	st := persist.NewMemory(func() time.Time {
-		return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	}, 30*time.Second)
-
-	err = platform.StartStop(t.Context(), fxworker.NewApp(
+	err := platform.StartStop(t.Context(), fxworker.NewApp(
 		fx.NopLogger,
 		fx.Provide(func() dispatch.Jobs { return st }),
 		fx.Provide(func() dispatch.Publisher { return nopPublisher{} }),

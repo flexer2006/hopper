@@ -130,7 +130,13 @@ func writeLookup(t *testing.T, dir, name, kind string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
+
+	defer func() {
+		closeErr := file.Close()
+		if closeErr != nil {
+			t.Errorf("close %s: %v", name, closeErr)
+		}
+	}()
 
 	err = prof.WriteTo(file, 0)
 	if err != nil {

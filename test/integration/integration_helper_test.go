@@ -12,12 +12,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"testing"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"gopkg.in/yaml.v2"
+
+	"github.com/flexer2006/hopper/internal/testutil"
 )
 
 const (
@@ -35,37 +36,10 @@ type labConfig struct {
 	Collection string
 }
 
-func moduleRoot(t *testing.T) string {
-	t.Helper()
-
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller")
-	}
-
-	dir := filepath.Dir(file)
-	for range 12 {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-
-		dir = parent
-	}
-
-	t.Fatal("go.mod not found")
-
-	return ""
-}
-
 func loadLabConfig(t *testing.T) labConfig {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), deployConfig))
+	raw, err := os.ReadFile(filepath.Join(testutil.ModuleRoot(t), deployConfig))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,4 +256,56 @@ func drainGetMatch(ctx context.Context, ch *amqp.Channel, queue string, match fu
 		case <-ticker.C:
 		}
 	}
+}
+
+var defaultJobJSON = []byte(`{"type":"http_post","target":"https://example.com/","payload":{"n":1},"max_attempts":1}`)
+
+func postJobs(t *testing.T, token, idem string, body []byte) (int, []byte) {
+	t.Helper()
+
+	if body == nil {
+		body = defaultJobJSON
+	}
+
+	resp, raw, err := apiRequest(t.Context(), http.MethodPost, "/v1/jobs", token, idem, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return resp.StatusCode, raw
+}
+
+func decodeJobID(t *testing.T, raw []byte) string {
+	t.Helper()
+
+	var created map[string]any
+
+	err := json.Unmarshal(raw, &created)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id, ok := created["id"].(string)
+	if !ok || id == "" {
+		t.Fatalf("created id = %v", created["id"])
+	}
+
+	return id
+}
+
+func postAcceptedJob(t *testing.T, cfg labConfig, idem string) string {
+	t.Helper()
+
+	status, raw := postJobs(t, cfg.APIToken, idem, nil)
+	if status != http.StatusAccepted {
+		safeLogf(t, "POST status=%d body=%s", status, string(raw))
+		t.Fatalf("POST status = %d, want 202", status)
+	}
+
+	id := decodeJobID(t, raw)
+	if len(id) != 24 {
+		t.Fatalf("created id = %v", id)
+	}
+
+	return id
 }

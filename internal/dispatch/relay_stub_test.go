@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/flexer2006/hopper/internal/dispatch"
+	"github.com/flexer2006/hopper/internal/platform"
 )
 
 type stubJobs struct {
@@ -97,6 +98,59 @@ func TestRelayTickListErrors(t *testing.T) {
 	err = rel.Tick(t.Context())
 	if !errors.Is(err, want) {
 		t.Fatalf("Tick() heal list err = %v", err)
+	}
+}
+
+func TestNewRelayFromRequiresDeps(t *testing.T) {
+	t.Parallel()
+
+	if dispatch.NewRelayFrom(nil, new(recPub), new(platform.Config), nil) != nil {
+		t.Fatal("NewRelayFrom without jobs must be nil")
+	}
+
+	if dispatch.NewRelayFrom(&stubJobs{}, nil, new(platform.Config), nil) != nil {
+		t.Fatal("NewRelayFrom without publisher must be nil")
+	}
+
+	if dispatch.NewRelayFrom(&stubJobs{}, new(recPub), nil, nil) != nil {
+		t.Fatal("NewRelayFrom without config must be nil")
+	}
+
+	cfg := new(platform.Config)
+	cfg.RelayInterval = time.Second
+	cfg.HealingInterval = 2 * time.Second
+	cfg.LeaseScanInterval = 3 * time.Second
+
+	got := dispatch.ConfigFrom(cfg)
+	if got.Interval != time.Second || got.Healing != 2*time.Second || got.Lease != 3*time.Second {
+		t.Fatalf("ConfigFrom() = %+v", got)
+	}
+
+	rel := dispatch.NewRelayFrom(&stubJobs{}, new(recPub), cfg, nil)
+	if rel == nil {
+		t.Fatal("NewRelayFrom with deps must be non-nil")
+	}
+}
+
+func TestRelayBindStartStop(t *testing.T) {
+	t.Parallel()
+
+	rel := dispatch.NewRelay(&stubJobs{}, new(recPub), dispatch.Config{Limit: 8}, zap.NewNop())
+	hooks := rel.BindStart()
+
+	err := hooks.Stop(t.Context())
+	if err != nil {
+		t.Fatalf("stop before start = %v", err)
+	}
+
+	err = hooks.Start(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = hooks.Stop(t.Context())
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

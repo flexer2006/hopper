@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/flexer2006/hopper/internal/platform"
 )
 
 type Config struct {
@@ -24,6 +26,11 @@ type Relay struct {
 	healing  time.Duration
 	lease    time.Duration
 	limit    int
+}
+
+type StartStop struct {
+	Start func(context.Context) error
+	Stop  func(context.Context) error
 }
 
 const (
@@ -61,6 +68,46 @@ func NewRelay(jobs Jobs, pub Publisher, cfg Config, log *zap.Logger) *Relay {
 	rel.limit = clampLimit(cfg.Limit)
 
 	return rel
+}
+
+func ConfigFrom(cfg *platform.Config) Config {
+	if cfg == nil {
+		return Config{}
+	}
+
+	return Config{
+		Interval: cfg.RelayInterval,
+		Healing:  cfg.HealingInterval,
+		Lease:    cfg.LeaseScanInterval,
+		Limit:    0,
+	}
+}
+
+func NewRelayFrom(jobs Jobs, pub Publisher, cfg *platform.Config, log *zap.Logger) *Relay {
+	if jobs == nil || pub == nil || cfg == nil {
+		return nil
+	}
+
+	return NewRelay(jobs, pub, ConfigFrom(cfg), log)
+}
+
+func (r *Relay) BindStart() StartStop {
+	var stop func(context.Context) error
+
+	return StartStop{
+		Start: func(ctx context.Context) error {
+			stop = r.Start(ctx)
+
+			return nil
+		},
+		Stop: func(ctx context.Context) error {
+			if stop != nil {
+				return stop(ctx)
+			}
+
+			return nil
+		},
+	}
 }
 
 func clampLimit(limit int) int {

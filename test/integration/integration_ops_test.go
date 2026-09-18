@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/flexer2006/hopper/internal/testutil"
 )
 
 func TestLiveATOPS01WorkerSIGTERM(t *testing.T) {
@@ -57,7 +59,7 @@ func requireDisruptive(t *testing.T) {
 func composeStopStart(t *testing.T, service string, stopTimeoutSec int) time.Duration {
 	t.Helper()
 
-	compose := filepath.Join(moduleRoot(t), "deploy", "compose.yaml")
+	compose := filepath.Join(testutil.ModuleRoot(t), "deploy", "compose.yaml")
 	started := time.Now()
 	stop := exec.CommandContext(
 		t.Context(),

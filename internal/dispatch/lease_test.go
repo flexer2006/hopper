@@ -10,23 +10,12 @@ import (
 	"github.com/flexer2006/hopper/internal/deliver"
 	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/domain"
-	"github.com/flexer2006/hopper/internal/persist"
 )
 
 func TestTickLeasesExpiredRunningQueuedPending(t *testing.T) {
 	t.Parallel()
 
-	clk := newClock()
-	st := persist.NewMemory(clk.now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
-	if err != nil {
-		t.Fatal(err)
-	}
+	st, clk, _ := claimedJob(t)
 
 	ids, err := st.ListExpiredLeases(t.Context(), 8)
 	if err != nil || len(ids) != 0 {
@@ -56,20 +45,10 @@ func TestTickLeasesExpiredRunningQueuedPending(t *testing.T) {
 func TestTickLeasesUnexpiredNoTransition(t *testing.T) {
 	t.Parallel()
 
-	clk := newClock()
-	st := persist.NewMemory(clk.now, 30*time.Second)
-	err := st.Insert(t.Context(), testRecord())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	out, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
-	if err != nil {
-		t.Fatal(err)
-	}
+	st, _, out := claimedJob(t)
 
 	rel := newRelay(t, st, new(recPub))
-	err = rel.TickLeases(t.Context())
+	err := rel.TickLeases(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

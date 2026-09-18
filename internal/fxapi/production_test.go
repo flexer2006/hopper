@@ -149,11 +149,9 @@ func TestBindPortsWithFakesStartStopTwice(t *testing.T) {
 		t.Fatalf("mongo check on memory store = %v, want ErrNotOpen (health must not lie)", err)
 	}
 
-	for cycle := range 2 {
-		err = platform.StartStop(t.Context(), app)
-		if err != nil {
-			t.Fatalf("cycle %d start/stop: %v", cycle, err)
-		}
+	err = platform.StartStopCycles(t.Context(), app, 2)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

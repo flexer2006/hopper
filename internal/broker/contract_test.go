@@ -5,72 +5,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"testing"
 
 	"github.com/flexer2006/hopper/internal/broker"
+	"github.com/flexer2006/hopper/internal/testutil"
 )
-
-func moduleRoot(t *testing.T) string {
-	t.Helper()
-
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller")
-	}
-
-	dir := filepath.Dir(file)
-	for range 12 {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-
-		dir = parent
-	}
-
-	t.Fatal("go.mod not found")
-
-	return ""
-}
-
-func resolveProductDocs(moduleRoot string, parts ...string) (string, bool) {
-	candidates := []string{
-		filepath.Join(append([]string{moduleRoot, "..", "docs"}, parts...)...),
-		filepath.Join(append([]string{moduleRoot, "docs"}, parts...)...),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return path, true
-		}
-	}
-
-	return "", false
-}
-
-func productDocs(t *testing.T, parts ...string) string {
-	t.Helper()
-
-	path, ok := resolveProductDocs(moduleRoot(t), parts...)
-	if !ok {
-		t.Fatalf("product docs not found for %s (tried ../docs then module docs/)", filepath.Join(parts...))
-	}
-
-	return path
-}
 
 func TestEnqueueGoldenMatchesSchemaATCONTRACT02(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile(productDocs(t, "contracts", "enqueue-message.schema.json"))
+	raw, err := os.ReadFile(testutil.ProductDocs(t, "contracts", "enqueue-message.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +94,7 @@ func TestEnqueueGoldenMatchesSchemaATCONTRACT02(t *testing.T) {
 func TestDLQGoldenMatchesSchemaATCONTRACT04(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile(productDocs(t, "contracts", "dlq-message.schema.json"))
+	raw, err := os.ReadFile(testutil.ProductDocs(t, "contracts", "dlq-message.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

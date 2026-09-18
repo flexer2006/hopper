@@ -110,6 +110,10 @@ components:
     in:
       - cmd/hopper
       - cmd/hopper/**
+  testutil:
+    in:
+      - internal/testutil
+      - internal/testutil/**
 
 commonComponents:
   - domain
@@ -244,3 +248,7 @@ deps:
       - fxworker
       - platform
     canUse: []
+
+  testutil:
+    mayDependOn: []
+    anyVendorDeps: true

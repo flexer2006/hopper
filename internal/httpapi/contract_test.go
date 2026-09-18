@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/flexer2006/hopper/internal/platform"
+	"github.com/flexer2006/hopper/internal/testutil"
 )
 
 var publicJobSecrets = []string{
@@ -44,120 +44,10 @@ var shippedProductDocs = [][]string{
 	{"contracts", "service-unavailable-response.schema.json"},
 }
 
-func moduleRoot(t *testing.T) string {
-	t.Helper()
-
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller")
-	}
-
-	dir := filepath.Dir(file)
-	for range 12 {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-
-		dir = parent
-	}
-
-	t.Fatal("go.mod not found")
-
-	return ""
-}
-
-func resolveProductDocs(moduleRoot string, parts ...string) (string, bool) {
-	candidates := []string{
-		filepath.Join(append([]string{moduleRoot, "..", "docs"}, parts...)...),
-		filepath.Join(append([]string{moduleRoot, "docs"}, parts...)...),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return path, true
-		}
-	}
-
-	return "", false
-}
-
-func productDocs(t *testing.T, parts ...string) string {
-	t.Helper()
-
-	path, ok := resolveProductDocs(moduleRoot(t), parts...)
-	if !ok {
-		t.Fatalf("product docs not found for %s (tried ../docs then module docs/)", filepath.Join(parts...))
-	}
-
-	return path
-}
-
-func TestResolveProductDocsSiblingLayout(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	mod := filepath.Join(root, "mod")
-	sib := filepath.Join(root, "docs", "api")
-	nested := filepath.Join(mod, "docs", "api")
-
-	err := os.MkdirAll(sib, 0o755)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = os.MkdirAll(nested, 0o755)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = os.WriteFile(filepath.Join(sib, "openapi.yaml"), []byte("sibling"), 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = os.WriteFile(filepath.Join(nested, "openapi.yaml"), []byte("nested"), 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	got, ok := resolveProductDocs(mod, "api", "openapi.yaml")
-	if !ok || got != filepath.Join(sib, "openapi.yaml") {
-		t.Fatalf("got %q ok=%v, want sibling", got, ok)
-	}
-}
-
-func TestResolveProductDocsModuleLayout(t *testing.T) {
-	t.Parallel()
-
-	mod := t.TempDir()
-	nested := filepath.Join(mod, "docs", "contracts")
-
-	err := os.MkdirAll(nested, 0o755)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := filepath.Join(nested, "enqueue-message.schema.json")
-	err = os.WriteFile(want, []byte("{}"), 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	got, ok := resolveProductDocs(mod, "contracts", "enqueue-message.schema.json")
-	if !ok || got != want {
-		t.Fatalf("got %q ok=%v, want module-local", got, ok)
-	}
-}
-
 func TestModuleShipsProductDocsForGitHubCI(t *testing.T) {
 	t.Parallel()
 
-	root := moduleRoot(t)
+	root := testutil.ModuleRoot(t)
 	for _, parts := range shippedProductDocs {
 		path := filepath.Join(append([]string{root, "docs"}, parts...)...)
 		if _, err := os.Stat(path); err != nil {
@@ -169,7 +59,7 @@ func TestModuleShipsProductDocsForGitHubCI(t *testing.T) {
 func TestModuleProductDocsMatchSiblingWhenPresent(t *testing.T) {
 	t.Parallel()
 
-	root := moduleRoot(t)
+	root := testutil.ModuleRoot(t)
 	sibRoot := filepath.Join(root, "..", "docs")
 	if _, err := os.Stat(sibRoot); err != nil {
 		return
@@ -324,7 +214,7 @@ func strSlice(t *testing.T, v any) []string {
 func TestOpenAPIStructuralATCONTRACT01(t *testing.T) {
 	t.Parallel()
 
-	doc := loadYAML(t, productDocs(t, "api", "openapi.yaml"))
+	doc := loadYAML(t, testutil.ProductDocs(t, "api", "openapi.yaml"))
 
 	paths := child(t, doc, "paths")
 	wantOps := map[string][]string{
@@ -428,7 +318,7 @@ func TestOpenAPIStructuralATCONTRACT01(t *testing.T) {
 		}
 	}
 
-	schemaFile := loadJSONMap(t, productDocs(t, "contracts", "error-response.schema.json"))
+	schemaFile := loadJSONMap(t, testutil.ProductDocs(t, "contracts", "error-response.schema.json"))
 	openCodes := strSlice(t, child(t, props, "code")["enum"])
 	fileCodes := strSlice(t, child(t, child(t, schemaFile, "properties"), "code")["enum"])
 	slices.Sort(openCodes)
@@ -470,7 +360,7 @@ func TestOpenAPIStructuralATCONTRACT01(t *testing.T) {
 func TestPublicJobOmitsInternalsATCONTRACT03(t *testing.T) {
 	t.Parallel()
 
-	doc := loadYAML(t, productDocs(t, "api", "openapi.yaml"))
+	doc := loadYAML(t, testutil.ProductDocs(t, "api", "openapi.yaml"))
 	job := child(t, child(t, child(t, doc, "components"), "schemas"), "Job")
 	props := child(t, job, "properties")
 
@@ -480,7 +370,7 @@ func TestPublicJobOmitsInternalsATCONTRACT03(t *testing.T) {
 		}
 	}
 
-	mongo := loadJSONMap(t, productDocs(t, "contracts", "job-document.schema.json"))
+	mongo := loadJSONMap(t, testutil.ProductDocs(t, "contracts", "job-document.schema.json"))
 	mongoProps := child(t, mongo, "properties")
 	for _, name := range []string{
 		"dispatch", "producer_idempotency_key", "request_hash", "delivery_starts",
@@ -536,7 +426,7 @@ func TestPublicJobOmitsInternalsATCONTRACT03(t *testing.T) {
 func TestREADMECommandsATDEPLOY01(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "README.md"))
+	raw, err := os.ReadFile(filepath.Join(testutil.ModuleRoot(t), "README.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +438,7 @@ func TestREADMECommandsATDEPLOY01(t *testing.T) {
 		}
 	}
 
-	spec, err := os.ReadFile(productDocs(t, "api", "openapi.yaml"))
+	spec, err := os.ReadFile(testutil.ProductDocs(t, "api", "openapi.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

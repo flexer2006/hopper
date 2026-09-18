@@ -114,6 +114,7 @@ services:
       GOMEMLIMIT: 205MiB
     stop_grace_period: 35s
     networks:
+      - edge
       - backend
 
   nginx:
@@ -140,9 +141,17 @@ services:
 networks:
   edge:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+          gateway: 172.30.0.1
   backend:
     driver: bridge
     internal: true
+    ipam:
+      config:
+        - subnet: 172.31.0.0/16
+          gateway: 172.31.0.1
 
 volumes:
   mongo_data:

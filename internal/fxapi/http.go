@@ -23,13 +23,13 @@ import (
 type httpIn struct {
 	fx.In
 
+	Checks  []httpapi.Checker `group:"health"`
 	LC      fx.Lifecycle
 	Log     *zap.Logger
 	Cfg     *platform.Config
-	Enqueue *enqueue.Service  `optional:"true"`
-	Query   *query.Service    `optional:"true"`
-	Replay  *replay.Service   `optional:"true"`
-	Checks  []httpapi.Checker `group:"health"`
+	Enqueue *enqueue.Service `optional:"true"`
+	Query   *query.Service   `optional:"true"`
+	Replay  *replay.Service  `optional:"true"`
 }
 
 const (

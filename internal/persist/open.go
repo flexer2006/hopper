@@ -12,16 +12,11 @@ import (
 )
 
 type Options struct {
-	URI        string
-	Database   string
-	Collection string
-	Lease      time.Duration
+	URI, Database, Collection string
+	Lease                     time.Duration
 }
 
-type OpenClose struct {
-	Start func(context.Context) error
-	Stop  func(context.Context) error
-}
+type OpenClose struct{ Start, Stop func(context.Context) error }
 
 const DefaultCloseTimeout = 5 * time.Second
 

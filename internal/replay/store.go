@@ -8,17 +8,13 @@ import (
 	"github.com/flexer2006/hopper/internal/domain"
 )
 
-type Request struct {
-	ID string
-	By string
-}
+type Request struct{ ID, By string }
 
 type Result struct {
-	ID         string
-	Status     domain.Status
-	Cycle      int
-	Generation int
-	Accepted   bool
+	ID                string
+	Status            domain.Status
+	Cycle, Generation int
+	Accepted          bool
 }
 
 type Store interface {

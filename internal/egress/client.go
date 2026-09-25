@@ -123,10 +123,10 @@ func (c *Client) roundTrip(
 	req.Header.Set("Idempotency-Key", domain.OutboundIdempotencyKey(in.JobID, in.Cycle, in.Attempt))
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{ //nolint:exhaustruct_v5 // Timeout is the request context; Jar unused
+	client := new(http.Client{ //nolint:exhaustruct_v5 // Timeout is the request context; Jar unused
 		Transport:     c.transport(pin, serverName),
 		CheckRedirect: rejectRedirect,
-	}
+	})
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -156,15 +156,15 @@ func (c *Client) transport(pin netip.AddrPort, serverName string) *http.Transpor
 	protos := new(http.Protocols)
 	protos.SetHTTP1(true)
 
-	cfg := &tls.Config{ //nolint:exhaustruct_v5 // InsecureSkipVerify stays false; system or injected roots
+	cfg := new(tls.Config{ //nolint:exhaustruct_v5 // InsecureSkipVerify stays false; system or injected roots
 		MinVersion: tls.VersionTLS12,
 		ServerName: serverName,
 		RootCAs:    c.roots,
-	}
+	})
 
 	want := pin.String()
 
-	return &http.Transport{ //nolint:exhaustruct_v5 // per-attempt isolated transport; zeros are protocol defaults
+	return new(http.Transport{ //nolint:exhaustruct_v5 // per-attempt isolated transport; zeros are protocol defaults
 		Proxy:                 noProxy,
 		ForceAttemptHTTP2:     false,
 		DisableKeepAlives:     true,
@@ -174,7 +174,7 @@ func (c *Client) transport(pin netip.AddrPort, serverName string) *http.Transpor
 		TLSClientConfig:       cfg,
 		DialContext:           c.pinDial(want),
 		ResponseHeaderTimeout: c.requestTimeout(),
-	}
+	})
 }
 
 func (c *Client) pinDial(want string) func(context.Context, string, string) (net.Conn, error) {

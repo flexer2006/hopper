@@ -6,32 +6,21 @@ import (
 	"github.com/flexer2006/hopper/internal/domain"
 )
 
-type ClaimIn struct {
-	ID       string
-	WorkerID string
-}
+type ClaimIn struct{ ID, WorkerID string }
 
 type ClaimOut struct {
-	Payload     []byte
-	Attempts    []domain.Attempt
-	Target      string
-	FenceToken  string
-	ID          string
-	Status      domain.Status
-	Cycle       int
-	Attempt     int
-	MaxAttempts int
+	Payload                     []byte
+	Attempts                    []domain.Attempt
+	Target, FenceToken, ID      string
+	Status                      domain.Status
+	Cycle, Attempt, MaxAttempts int
 }
 
 type OutcomeIn struct {
-	Attempts     []domain.Attempt
-	ID           string
-	FenceToken   string
-	Queue        string
-	Status       domain.Status
-	DelaySeconds int
-	AttemptsDone int
-	Cycle        int
+	Attempts                          []domain.Attempt
+	ID, FenceToken, Queue             string
+	Status                            domain.Status
+	DelaySeconds, AttemptsDone, Cycle int
 }
 
 type Jobs interface {

@@ -2,6 +2,7 @@ package broker
 
 import (
 	"math"
+	"slices"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
@@ -79,9 +80,7 @@ func AllQueueNames() ([]string, error) {
 		return nil, err
 	}
 
-	out := make([]string, 0, workAndDLQCount+len(delay))
-	out = append(out, QueueJobs, domain.QueueDLQ)
-	out = append(out, delay...)
+	out := slices.Concat([]string{QueueJobs, domain.QueueDLQ}, delay)
 
 	return out, nil
 }

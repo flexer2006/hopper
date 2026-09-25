@@ -7,10 +7,8 @@ import (
 )
 
 type Intent struct {
-	ID         string
-	Queue      string
-	Kind       string
-	Generation int
+	ID, Queue, Kind string
+	Generation      int
 }
 
 type Jobs interface {

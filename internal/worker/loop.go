@@ -25,22 +25,20 @@ type Relayer interface {
 }
 
 type Worker struct {
-	jobs           deliver.Jobs
-	http           deliver.HTTP
-	aux            AuxiliaryDLQ
-	relay          Relayer
-	log            *zap.Logger
-	now            func() time.Time
-	id             string
-	budget         time.Duration
-	outcomeTimeout time.Duration
+	jobs                   deliver.Jobs
+	http                   deliver.HTTP
+	aux                    AuxiliaryDLQ
+	relay                  Relayer
+	log                    *zap.Logger
+	now                    func() time.Time
+	id                     string
+	budget, outcomeTimeout time.Duration
 }
 
 type Config struct {
-	Now            func() time.Time
-	WorkerID       string
-	AttemptBudget  time.Duration
-	OutcomeTimeout time.Duration
+	Now                           func() time.Time
+	WorkerID                      string
+	AttemptBudget, OutcomeTimeout time.Duration
 }
 
 const (

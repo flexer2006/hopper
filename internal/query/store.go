@@ -9,37 +9,26 @@ import (
 )
 
 type Job struct {
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	Payload       json.RawMessage
-	Attempts      []Attempt
-	ReplayHistory []ReplayEvent
-	ID            string
-	Type          domain.JobType
-	Target        string
-	Status        domain.Status
-	Cycle         int
-	AttemptsDone  int
-	MaxAttempts   int
-	ReplayCount   int
+	CreatedAt, UpdatedAt                          time.Time
+	Payload                                       json.RawMessage
+	Attempts                                      []Attempt
+	ReplayHistory                                 []ReplayEvent
+	ID, Target                                    string
+	Type                                          domain.JobType
+	Status                                        domain.Status
+	Cycle, AttemptsDone, MaxAttempts, ReplayCount int
 }
 
 type Attempt struct {
-	At           time.Time
-	Error        string
-	Outcome      string
-	FailureClass string
-	Cycle        int
-	Number       int
-	DurationMS   int
-	StatusCode   int
+	At                                    time.Time
+	Error, Outcome, FailureClass          string
+	Cycle, Number, DurationMS, StatusCode int
 }
 
 type ReplayEvent struct {
-	At        time.Time
-	By        string
-	FromCycle int
-	ToCycle   int
+	At                 time.Time
+	By                 string
+	FromCycle, ToCycle int
 }
 
 type Store interface {
@@ -47,9 +36,7 @@ type Store interface {
 	ListDead(ctx context.Context, limit int) ([]Job, error)
 }
 
-type Service struct {
-	store Store
-}
+type Service struct{ store Store }
 
 const DefaultListLimit = 50
 

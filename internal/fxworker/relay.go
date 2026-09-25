@@ -8,9 +8,7 @@ import (
 	"github.com/flexer2006/hopper/internal/platform"
 )
 
-type relayHolder struct {
-	relay *dispatch.Relay
-}
+type relayHolder struct{ relay *dispatch.Relay }
 
 type relayIn struct {
 	fx.In

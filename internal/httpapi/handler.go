@@ -13,33 +13,25 @@ import (
 )
 
 type Handler struct {
-	log        *zap.Logger
-	enqueue    *enqueue.Service
-	query      *query.Service
-	replay     *replay.Service
-	limit      *limiter
-	checks     []Checker
-	token      []byte
-	maxBody    int
-	maxPayload int
-	maxDepth   int
-	xffHops    int
+	checks                                 []Checker
+	token                                  []byte
+	log                                    *zap.Logger
+	enqueue                                *enqueue.Service
+	query                                  *query.Service
+	replay                                 *replay.Service
+	limit                                  *limiter
+	maxBody, maxPayload, maxDepth, xffHops int
 }
 
 type Options struct {
-	Log             *zap.Logger
-	Now             func() time.Time
-	Enqueue         *enqueue.Service
-	Query           *query.Service
-	Replay          *replay.Service
-	Checks          []Checker
-	Token           string
-	MaxRequestBytes int
-	MaxPayloadBytes int
-	JSONMaxDepth    int
-	RateLimitRPM    int
-	RateLimitBurst  int
-	TrustXFFHops    int
+	Checks                                                                                     []Checker
+	Log                                                                                        *zap.Logger
+	Now                                                                                        func() time.Time
+	Enqueue                                                                                    *enqueue.Service
+	Query                                                                                      *query.Service
+	Replay                                                                                     *replay.Service
+	Token                                                                                      string
+	MaxRequestBytes, MaxPayloadBytes, JSONMaxDepth, RateLimitRPM, RateLimitBurst, TrustXFFHops int
 }
 
 const (

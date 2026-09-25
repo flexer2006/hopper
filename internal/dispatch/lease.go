@@ -13,12 +13,8 @@ import (
 func (r *Relay) Run(ctx context.Context) error {
 	grp, grpCtx := errgroup.WithContext(ctx)
 
-	grp.Go(func() error {
-		return r.loop(grpCtx, r.interval, r.Tick)
-	})
-	grp.Go(func() error {
-		return r.loop(grpCtx, r.lease, r.TickLeases)
-	})
+	grp.Go(func() error { return r.loop(grpCtx, r.interval, r.Tick) })
+	grp.Go(func() error { return r.loop(grpCtx, r.lease, r.TickLeases) })
 
 	err := grp.Wait()
 	if err != nil {

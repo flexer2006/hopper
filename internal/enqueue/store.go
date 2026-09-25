@@ -8,22 +8,15 @@ import (
 )
 
 type Record struct {
-	Payload     []byte
-	ID          string
-	Target      string
-	ProducerKey string
-	RequestHash string
-	Type        domain.JobType
-	MaxAttempts int
+	Payload                              []byte
+	ID, Target, ProducerKey, RequestHash string
+	Type                                 domain.JobType
+	MaxAttempts                          int
 }
 
 type Existing struct {
-	ID             string
-	RequestHash    string
-	DispatchStatus string
-	Queue          string
-	Kind           string
-	Generation     int
+	ID, RequestHash, DispatchStatus, Queue, Kind string
+	Generation                                   int
 }
 
 type Result struct {

@@ -15,7 +15,6 @@ const (
 	classicDelayCount    = 7
 	delayBucketProbe     = 8
 	prefetchSizeBytes    = 0
-	workAndDLQCount      = 2
 	publishMandatory     = true
 	publishImmediate     = false
 	ackMultiple          = false

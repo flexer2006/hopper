@@ -39,7 +39,7 @@ func NewPublisher(
 		timeout = DefaultConfirmTimeout
 	}
 
-	return &Publisher{publish: publish, timeout: timeout, mu: sync.Mutex{}}
+	return new(Publisher{publish: publish, timeout: timeout, mu: sync.Mutex{}})
 }
 
 func PublisherFromChannel(channel *amqp.Channel, timeout time.Duration) *Publisher {

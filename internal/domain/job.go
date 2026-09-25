@@ -7,16 +7,11 @@ type Status string
 type JobType string
 
 type Job struct {
-	Attempts       []Attempt
-	ID             string
-	Target         string
-	Type           JobType
-	Status         Status
-	Cycle          int
-	AttemptsDone   int
-	DeliveryStarts int
-	MaxAttempts    int
-	ReplayCount    int
+	Attempts                                                      []Attempt
+	ID, Target                                                    string
+	Type                                                          JobType
+	Status                                                        Status
+	Cycle, AttemptsDone, DeliveryStarts, MaxAttempts, ReplayCount int
 }
 
 type Route struct {
@@ -26,8 +21,7 @@ type Route struct {
 }
 
 type NewParams struct {
-	ID          string
-	Target      string
+	ID, Target  string
 	Type        JobType
 	MaxAttempts int
 }
@@ -75,7 +69,7 @@ func NewJob(params NewParams) (*Job, error) {
 		return nil, valErr
 	}
 
-	return &Job{
+	return new(Job{
 		Attempts:       nil,
 		ID:             params.ID,
 		Target:         params.Target,
@@ -86,7 +80,7 @@ func NewJob(params NewParams) (*Job, error) {
 		DeliveryStarts: 0,
 		MaxAttempts:    maxAttempts,
 		ReplayCount:    0,
-	}, nil
+	}), nil
 }
 
 func (j *Job) AttemptNumber() int {

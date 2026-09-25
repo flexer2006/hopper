@@ -12,26 +12,19 @@ import (
 )
 
 type Config struct {
-	Interval time.Duration
-	Healing  time.Duration
-	Lease    time.Duration
-	Limit    int
+	Interval, Healing, Lease time.Duration
+	Limit                    int
 }
 
 type Relay struct {
-	jobs     Jobs
-	pub      Publisher
-	log      *zap.Logger
-	interval time.Duration
-	healing  time.Duration
-	lease    time.Duration
-	limit    int
+	jobs                     Jobs
+	pub                      Publisher
+	log                      *zap.Logger
+	interval, healing, lease time.Duration
+	limit                    int
 }
 
-type StartStop struct {
-	Start func(context.Context) error
-	Stop  func(context.Context) error
-}
+type StartStop struct{ Start, Stop func(context.Context) error }
 
 const (
 	DefaultInterval = 2 * time.Second

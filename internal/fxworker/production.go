@@ -20,33 +20,24 @@ import (
 )
 
 type brokerChannels struct {
-	pub        *amqp.Channel
-	sub        *amqp.Channel
+	pub, sub   *amqp.Channel
 	deliveries <-chan amqp.Delivery
 }
 
 type workerResources struct {
-	conn     *amqp.Connection
-	pub      *broker.Publisher
 	channels brokerChannels
 	mu       sync.RWMutex
+	conn     *amqp.Connection
+	pub      *broker.Publisher
 }
 
-type amqpSource struct {
-	resources *workerResources
-}
+type amqpSource struct{ resources *workerResources }
 
-type amqpDelivery struct {
-	delivery amqp.Delivery
-}
+type amqpDelivery struct{ delivery amqp.Delivery }
 
-type mongoChecker struct {
-	store *persist.Store
-}
+type mongoChecker struct{ store *persist.Store }
 
-type amqpChecker struct {
-	resources *workerResources
-}
+type amqpChecker struct{ resources *workerResources }
 
 const productionConfirmTimeout = 5 * time.Second
 

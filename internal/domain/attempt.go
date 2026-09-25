@@ -6,14 +6,11 @@ import (
 )
 
 type Attempt struct {
-	At           time.Time
-	Error        string
-	Outcome      Outcome
-	FailureClass FailureClass
-	Cycle        int
-	Number       int
-	DurationMS   int
-	StatusCode   int
+	At                                    time.Time
+	Error                                 string
+	Outcome                               Outcome
+	FailureClass                          FailureClass
+	Cycle, Number, DurationMS, StatusCode int
 }
 
 const maxErrorRunes = 1024

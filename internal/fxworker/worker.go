@@ -18,9 +18,7 @@ import (
 	"github.com/flexer2006/hopper/internal/worker"
 )
 
-type auxDLQ struct {
-	pub *broker.Publisher
-}
+type auxDLQ struct{ pub *broker.Publisher }
 
 type workerLife struct {
 	fx.In

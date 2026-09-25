@@ -9,18 +9,15 @@ import (
 )
 
 type limiter struct {
-	now     func() time.Time
-	items   map[string]*bucket
-	mu      sync.Mutex
-	rpm     int
-	burst   int
-	maxKeys int
+	now                 func() time.Time
+	items               map[string]*bucket
+	mu                  sync.Mutex
+	rpm, burst, maxKeys int
 }
 
 type bucket struct {
-	last     time.Time
-	lastSeen time.Time
-	tokens   float64
+	last, lastSeen time.Time
+	tokens         float64
 }
 
 const (

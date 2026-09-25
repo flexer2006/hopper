@@ -9,8 +9,9 @@ import (
 
 const (
 	MaxTargetRunes = 2048
-	schemeHTTP     = "http"
-	schemeHTTPS    = "https"
+
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
 )
 
 func ParseTarget(raw string) (*url.URL, error) {

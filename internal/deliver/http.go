@@ -3,17 +3,12 @@ package deliver
 import "context"
 
 type HTTPRequest struct {
-	Payload []byte
-	Target  string
-	JobID   string
-	Cycle   int
-	Attempt int
+	Payload        []byte
+	Target, JobID  string
+	Cycle, Attempt int
 }
 
-type HTTPResult struct {
-	StatusCode int
-	BytesRead  int
-}
+type HTTPResult struct{ StatusCode, BytesRead int }
 
 type HTTP interface {
 	Post(ctx context.Context, req HTTPRequest) (HTTPResult, error)

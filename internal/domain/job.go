@@ -2,6 +2,21 @@ package domain
 
 import "fmt"
 
+const (
+	StatusQueued    Status = "queued"
+	StatusRunning   Status = "running"
+	StatusSucceeded Status = "succeeded"
+	StatusDead      Status = "dead"
+
+	TypeHTTPPost JobType = "http_post"
+
+	DefaultMaxAttempts  = 5
+	MinMaxAttempts      = 1
+	MaxMaxAttempts      = 20
+	ReplayCap           = 20
+	DeliveryStartsSlack = 3
+)
+
 type Status string
 
 type JobType string
@@ -25,21 +40,6 @@ type NewParams struct {
 	Type        JobType
 	MaxAttempts int
 }
-
-const (
-	StatusQueued    Status = "queued"
-	StatusRunning   Status = "running"
-	StatusSucceeded Status = "succeeded"
-	StatusDead      Status = "dead"
-
-	TypeHTTPPost JobType = "http_post"
-
-	DefaultMaxAttempts  = 5
-	MinMaxAttempts      = 1
-	MaxMaxAttempts      = 20
-	ReplayCap           = 20
-	DeliveryStartsSlack = 3
-)
 
 func NewJob(params NewParams) (*Job, error) {
 	if params.ID == "" {
@@ -83,13 +83,9 @@ func NewJob(params NewParams) (*Job, error) {
 	}), nil
 }
 
-func (j *Job) AttemptNumber() int {
-	return j.AttemptsDone + 1
-}
+func (j *Job) AttemptNumber() int { return j.AttemptsDone + 1 }
 
-func (j *Job) DeliveryStartsCap() int {
-	return j.MaxAttempts + DeliveryStartsSlack
-}
+func (j *Job) DeliveryStartsCap() int { return j.MaxAttempts + DeliveryStartsSlack }
 
 func (j *Job) Claim() error {
 	if j.Status != StatusQueued {

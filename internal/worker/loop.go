@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"go.uber.org/zap"
@@ -29,15 +30,15 @@ type Worker struct {
 	http                   deliver.HTTP
 	aux                    AuxiliaryDLQ
 	relay                  Relayer
+	id                     string
 	log                    *zap.Logger
 	now                    func() time.Time
-	id                     string
 	budget, outcomeTimeout time.Duration
 }
 
 type Config struct {
-	Now                           func() time.Time
 	WorkerID                      string
+	Now                           func() time.Time
 	AttemptBudget, OutcomeTimeout time.Duration
 }
 
@@ -73,16 +74,17 @@ func New(
 		budget = defaultBudget
 	}
 
-	w := new(Worker)
-	w.jobs = jobs
-	w.http = client
-	w.aux = aux
-	w.relay = relay
-	w.log = log
-	w.now = now
-	w.id = id
-	w.budget = budget
-	w.outcomeTimeout = cfg.OutcomeTimeout
+	w := new(Worker{
+		jobs:           jobs,
+		http:           client,
+		aux:            aux,
+		relay:          relay,
+		log:            log,
+		now:            now,
+		id:             id,
+		budget:         budget,
+		outcomeTimeout: cfg.OutcomeTimeout,
+	})
 
 	return w
 }
@@ -130,12 +132,14 @@ func (w *Worker) claimErr(ctx context.Context, msg Delivery, id string, err erro
 		}
 
 		return w.poison(ctx, msg, body)
+
 	case errors.Is(err, deliver.ErrNotDue),
 		errors.Is(err, deliver.ErrLeaseHeld),
 		errors.Is(err, deliver.ErrTerminal),
 		errors.Is(err, deliver.ErrNotRunning),
 		errors.Is(err, deliver.ErrClaimLost):
 		return msg.Ack()
+
 	default:
 		return err
 	}
@@ -261,9 +265,9 @@ func (w *Worker) commitOutcome(ctx context.Context, in *deliver.OutcomeIn) error
 }
 
 func snapshot(out *deliver.ClaimOut) *domain.Job {
-	attempts := append([]domain.Attempt(nil), out.Attempts...)
+	attempts := slices.Clone(out.Attempts)
 
-	return &domain.Job{
+	return new(domain.Job{
 		Attempts:       attempts,
 		ID:             out.ID,
 		Target:         out.Target,
@@ -274,5 +278,5 @@ func snapshot(out *deliver.ClaimOut) *domain.Job {
 		DeliveryStarts: 0,
 		MaxAttempts:    out.MaxAttempts,
 		ReplayCount:    0,
-	}
+	})
 }

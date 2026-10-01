@@ -68,8 +68,7 @@ func ghostDLQ(id string) ([]byte, error) {
 }
 
 func validHex(value string) bool {
-	for i := range value {
-		c := value[i]
+	for _, c := range value {
 		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}

@@ -37,14 +37,19 @@ func (s *seqHTTP) Post(context.Context, deliver.HTTPRequest) (deliver.HTTPResult
 func BenchmarkProcessSuccess(b *testing.B) {
 	clk := newClock()
 	st := persist.NewMemory(clk.now, 30*time.Second)
+
 	httpStub := &stubHTTP{code: http.StatusOK}
 	wkr := worker.New(st, httpStub, &stubAux{}, &stubRelay{}, nil, worker.Config{
 		Now:      clk.now,
 		WorkerID: "bench",
 	})
+
 	ctx := b.Context()
+
 	payload := []byte(`{"n":1}`)
+
 	b.ReportAllocs()
+
 	i := 0
 	for b.Loop() {
 		b.StopTimer()
@@ -143,14 +148,19 @@ func TestHOP16W3RSS(t *testing.T) { //nolint:paralleltest // process-wide VmRSS;
 
 	clk := newClock()
 	st := persist.NewMemory(clk.now, 30*time.Second)
+
 	httpStub := &stubHTTP{code: http.StatusOK}
 	wkr := worker.New(st, httpStub, &stubAux{}, &stubRelay{}, nil, worker.Config{
 		Now:      clk.now,
 		WorkerID: "w3",
 	})
+
 	ctx := t.Context()
+
 	payload := []byte(`{"pad":"` + strings.Repeat("b", 2048-10) + `"}`)
+
 	const jobs = 10000
+
 	rss := make([]int64, 0, 11)
 	rss = append(rss, readRSS(t))
 	for i := range jobs {

@@ -30,8 +30,8 @@ import (
 )
 
 type frozenClock struct {
-	mu sync.Mutex
 	ts time.Time
+	mu sync.Mutex
 }
 
 type memDelivery struct {
@@ -47,9 +47,9 @@ type stubHTTP struct {
 }
 
 type stubAux struct {
+	bodies [][]byte
 	err    error
 	mu     sync.Mutex
-	bodies [][]byte
 }
 
 type stubRelay struct {
@@ -59,17 +59,11 @@ type stubRelay struct {
 
 type capJobs struct{}
 
-type chanSource struct {
-	ch chan worker.Delivery
-}
+type chanSource struct{ ch chan worker.Delivery }
 
-type failCommit struct {
-	*persist.Store
-}
+type failCommit struct{ *persist.Store }
 
-type skipJobs struct {
-	err error
-}
+type skipJobs struct{ err error }
 
 const (
 	testJobID  = "aaaaaaaaaaaaaaaaaaaaaaaa"
@@ -89,9 +83,7 @@ var (
 	_ dispatch.Jobs       = (*persist.Store)(nil)
 )
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 func (c *frozenClock) now() time.Time {
 	c.mu.Lock()
@@ -107,9 +99,7 @@ func (c *frozenClock) add(d time.Duration) {
 	c.ts = c.ts.Add(d)
 }
 
-func (d *memDelivery) Body() []byte {
-	return d.body
-}
+func (d *memDelivery) Body() []byte { return d.body }
 
 func (d *memDelivery) Ack() error {
 	if d.ackErr != nil {
@@ -144,6 +134,7 @@ func (a *stubAux) Publish(_ context.Context, body []byte) error {
 
 func (r *stubRelay) Tick(context.Context) error {
 	r.n.Add(1)
+
 	return r.err
 }
 
@@ -159,6 +150,7 @@ func (s *chanSource) Next(ctx context.Context) (worker.Delivery, error) { //noli
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
+
 	case d := <-s.ch:
 		return d, nil
 	}
@@ -169,12 +161,10 @@ func (f *failCommit) CommitOutcome(context.Context, deliver.OutcomeIn) error {
 }
 
 func newClock() *frozenClock {
-	return &frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
+	return new(frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)})
 }
 
-func newStore(clk *frozenClock) *persist.Store {
-	return persist.NewMemory(clk.now, 30*time.Second)
-}
+func newStore(clk *frozenClock) *persist.Store { return persist.NewMemory(clk.now, 30*time.Second) }
 
 func mustInsert(t *testing.T, st *persist.Store, maxAttempts int) {
 	t.Helper()
@@ -237,10 +227,13 @@ func TestProcessSuccessAcksAfterMongo(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	mustInsert(t, st, 5)
+
 	httpStub := &stubHTTP{code: http.StatusOK}
 	relay := &stubRelay{}
 	deliv := &memDelivery{body: jobBody(t)}
+
 	wkr := newWorker(t, st, httpStub, nil, relay, clk, "w1")
 
 	err := wkr.Process(t.Context(), deliv)
@@ -265,6 +258,7 @@ func TestProcessLogsOmitPayloadATSEC09(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	err := st.Insert(t.Context(), enqueue.Record{
 		Payload:     []byte(`{"secret":"` + canary + `"}`),
 		ID:          testJobID,
@@ -279,11 +273,13 @@ func TestProcessLogsOmitPayloadATSEC09(t *testing.T) {
 	}
 
 	core, logs := observer.New(zapcore.InfoLevel)
+
 	httpStub := &stubHTTP{code: http.StatusOK}
 	wkr := worker.New(st, httpStub, nil, &stubRelay{}, zap.New(core), worker.Config{
 		Now:      clk.now,
 		WorkerID: "w1",
 	})
+
 	deliv := &memDelivery{body: jobBody(t)}
 	err = wkr.Process(t.Context(), deliv)
 	if err != nil {
@@ -316,9 +312,12 @@ func TestProcessRetryableDelayNotSleep(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	mustInsert(t, st, 5)
+
 	httpStub := &stubHTTP{code: http.StatusServiceUnavailable}
 	deliv := &memDelivery{body: jobBody(t)}
+
 	wkr := newWorker(t, st, httpStub, nil, &stubRelay{}, clk, "w1")
 
 	err := wkr.Process(t.Context(), deliv)
@@ -346,8 +345,10 @@ func TestProcess408And429Retryable(t *testing.T) {
 
 			clk := newClock()
 			st := newStore(clk)
+
 			id := testJobID
 			key := testKey + http.StatusText(code)
+
 			err := st.Insert(t.Context(), enqueue.Record{
 				Payload:     []byte(`{"n":1}`),
 				ID:          id,
@@ -362,7 +363,9 @@ func TestProcess408And429Retryable(t *testing.T) {
 			}
 
 			wkr := newWorker(t, st, &stubHTTP{code: code}, nil, &stubRelay{}, clk, "w1")
+
 			deliv := &memDelivery{body: jobBody(t)}
+
 			err = wkr.Process(t.Context(), deliv)
 			if err != nil {
 				t.Fatalf("Process() err = %v", err)
@@ -381,7 +384,9 @@ func TestProcess404FailFastDead(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	mustInsert(t, st, 5)
+
 	wkr := newWorker(t, st, &stubHTTP{code: http.StatusNotFound}, nil, &stubRelay{}, clk, "w1")
 	deliv := &memDelivery{body: jobBody(t)}
 
@@ -401,7 +406,9 @@ func TestProcessExhaustRetryableDead(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	mustInsert(t, st, 1)
+
 	wkr := newWorker(t, st, &stubHTTP{code: http.StatusBadGateway}, nil, &stubRelay{}, clk, "w1")
 	deliv := &memDelivery{body: jobBody(t)}
 
@@ -424,7 +431,9 @@ func TestProcessSSRFAndThreeXX(t *testing.T) {
 
 		clk := newClock()
 		st := newStore(clk)
+
 		mustInsert(t, st, 5)
+
 		wkr := newWorker(t, st, &stubHTTP{err: deliver.ErrBlocked}, nil, &stubRelay{}, clk, "w1")
 		err := wkr.Process(t.Context(), &memDelivery{body: jobBody(t)})
 		if err != nil {
@@ -441,6 +450,7 @@ func TestProcessSSRFAndThreeXX(t *testing.T) {
 
 		clk := newClock()
 		st := newStore(clk)
+
 		err := st.Insert(t.Context(), enqueue.Record{
 			Payload:     []byte(`{"n":1}`),
 			ID:          testJobID,
@@ -471,8 +481,10 @@ func TestProcessGhostMalformedDLQ(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	aux := &stubAux{}
 	httpStub := &stubHTTP{code: http.StatusOK}
+
 	wkr := newWorker(t, st, httpStub, aux, &stubRelay{}, clk, "w1")
 
 	ghost := &memDelivery{body: jobBody(t)}
@@ -491,6 +503,7 @@ func TestProcessGhostMalformedDLQ(t *testing.T) {
 	}
 
 	raw := []byte(`{`)
+
 	malformed := &memDelivery{body: raw}
 	err = wkr.Process(t.Context(), malformed)
 	if err != nil {
@@ -514,7 +527,9 @@ func TestProcessAuxFailLeavesUnacked(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	aux := &stubAux{err: errors.New("nack")}
+
 	wkr := newWorker(t, st, &stubHTTP{code: http.StatusOK}, aux, &stubRelay{}, clk, "w1")
 	deliv := &memDelivery{body: []byte(`not-json`)}
 
@@ -533,7 +548,9 @@ func TestProcessSkipHTTPOnTerminalAndNotBefore(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	mustInsert(t, st, 5)
+
 	httpStub := &stubHTTP{code: http.StatusOK}
 	wkr := newWorker(t, st, httpStub, nil, &stubRelay{}, clk, "w1")
 
@@ -600,10 +617,14 @@ func TestProcessTwoWorkersOneClaim(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	mustInsert(t, st, 5)
+
 	httpStub := &stubHTTP{code: http.StatusOK}
+
 	w1 := newWorker(t, st, httpStub, nil, &stubRelay{}, clk, "alpha")
 	w2 := newWorker(t, st, httpStub, nil, &stubRelay{}, clk, "beta")
+
 	d1 := &memDelivery{body: jobBody(t)}
 	d2 := &memDelivery{body: jobBody(t)}
 
@@ -656,8 +677,10 @@ func TestProcessClaimUnknownErrorDoesNotAck(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("mongo unavailable")
+
 	httpStub := &stubHTTP{code: http.StatusOK}
 	deliv := &memDelivery{body: jobBody(t)}
+
 	wkr := newWorker(t, skipJobs{err: want}, httpStub, nil, &stubRelay{}, newClock(), "w1")
 
 	err := wkr.Process(t.Context(), deliv)
@@ -684,6 +707,7 @@ func TestProcessDeliveryCap(t *testing.T) {
 	httpStub := &stubHTTP{code: http.StatusOK}
 	relay := &stubRelay{}
 	deliv := &memDelivery{body: jobBody(t)}
+
 	wkr := newWorker(t, capJobs{}, httpStub, nil, relay, newClock(), "w1")
 
 	err := wkr.Process(t.Context(), deliv)
@@ -701,9 +725,12 @@ func TestProcessCommitFailDoesNotAck(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	mustInsert(t, st, 5)
+
 	deliv := &memDelivery{body: jobBody(t)}
 	failHTTP := &stubHTTP{code: http.StatusOK}
+
 	wkr := worker.New(&failCommit{Store: st}, failHTTP, nil, &stubRelay{}, nil, worker.Config{
 		Now:      clk.now,
 		WorkerID: "w1",
@@ -720,9 +747,12 @@ func TestProcessCommitFailThenRecoverDuplicatesPOST(t *testing.T) {
 
 	clk := newClock()
 	st := persist.NewMemory(clk.now, time.Millisecond)
+
 	mustInsert(t, st, 5)
+
 	httpStub := &stubHTTP{code: http.StatusOK}
 	first := &memDelivery{body: jobBody(t)}
+
 	wkr := worker.New(&failCommit{Store: st}, httpStub, nil, &stubRelay{}, nil, worker.Config{
 		Now:      clk.now,
 		WorkerID: "w1",
@@ -762,7 +792,9 @@ func TestProcessTickFailStillAcks(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	mustInsert(t, st, 5)
+
 	deliv := &memDelivery{body: jobBody(t)}
 	wkr := newWorker(t, st, &stubHTTP{code: http.StatusOK}, nil, &stubRelay{err: errors.New("confirm")}, clk, "w1")
 
@@ -798,7 +830,9 @@ func TestProcessClipsLocalError(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	mustInsert(t, st, 5)
+
 	wkr := newWorker(t, st, &stubHTTP{err: errors.New(strings.Repeat("e", 2000))}, nil, &stubRelay{}, clk, "w1")
 	err := wkr.Process(t.Context(), &memDelivery{body: jobBody(t)})
 	if err != nil {
@@ -816,6 +850,7 @@ func TestProcessGhostAuxFailLeavesUnacked(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	aux := &stubAux{err: errors.New("nack")}
 	httpStub := &stubHTTP{code: http.StatusOK}
 	wkr := newWorker(t, st, httpStub, aux, &stubRelay{}, clk, "w1")
@@ -852,7 +887,9 @@ func TestProcessAckFailAfterSuccessThenRedelivery(t *testing.T) {
 
 	clk := newClock()
 	st := newStore(clk)
+
 	mustInsert(t, st, 5)
+
 	httpStub := &stubHTTP{code: http.StatusOK}
 	wkr := newWorker(t, st, httpStub, nil, &stubRelay{}, clk, "w1")
 	first := &memDelivery{body: jobBody(t), ackErr: errors.New("channel")}
@@ -931,6 +968,7 @@ func TestRunCancel(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Run() err = %v", err)
 		}
+
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run() did not return")
 	}

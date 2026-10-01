@@ -6,12 +6,10 @@ import (
 )
 
 func NewHarness(lookup lookupFunc, dial dialFunc, roots *x509.CertPool) *Client {
-	return &Client{lookup: lookup, dial: dial, roots: roots}
+	return new(Client{lookup: lookup, dial: dial, roots: roots})
 }
 
-func Denied(ip netip.Addr) bool {
-	return denied(ip)
-}
+func Denied(ip netip.Addr) bool { return denied(ip) }
 
 func PinString(ip netip.Addr, port string) string {
 	ap, err := parseAddrPort(ip, port)

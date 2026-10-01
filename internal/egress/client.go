@@ -47,14 +47,16 @@ var (
 	errDialMismatch = errors.New("dial address is not the pinned ip")
 )
 
-func New() *Client {
-	return NewWithLimits(0, 0)
-}
+func New() *Client { return NewWithLimits(0, 0) }
 
 func NewWithLimits(timeout time.Duration, maxBody int64) *Client {
-	client := new(Client)
-	client.timeout = timeout
-	client.maxBody = maxBody
+	client := new(Client{
+		lookup:  nil,
+		dial:    nil,
+		roots:   nil,
+		timeout: timeout,
+		maxBody: maxBody,
+	})
 
 	return client
 }

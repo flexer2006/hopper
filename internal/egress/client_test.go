@@ -28,23 +28,21 @@ const (
 	publicIP    = "8.8.8.8"
 )
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 func testReq(target string) deliver.HTTPRequest {
-	return deliver.HTTPRequest{
+	deliv := deliver.HTTPRequest{
 		Payload: []byte(`{}`),
 		Target:  target,
 		JobID:   testJobID,
 		Cycle:   0,
 		Attempt: 1,
 	}
+
+	return deliv
 }
 
-func fixtureAddr() netip.Addr {
-	return netip.MustParseAddr(publicIP)
-}
+func fixtureAddr() netip.Addr { return netip.MustParseAddr(publicIP) }
 
 func TestDeniedPrefixes(t *testing.T) {
 	t.Parallel()

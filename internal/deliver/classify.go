@@ -20,6 +20,7 @@ func ClassifyLocal(err error) domain.FailureClass {
 		errors.Is(err, domain.ErrInvalidTarget),
 		errors.Is(err, domain.ErrHTTPForbidden):
 		return domain.ClassNonRetryableLocal
+
 	case errors.Is(err, ErrBodyLimit):
 		return domain.ClassRetryable
 	}

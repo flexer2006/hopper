@@ -17,23 +17,17 @@ import (
 	"github.com/flexer2006/hopper/internal/persist"
 )
 
-type stubPub struct {
-	err error
-}
+type stubPub struct{ err error }
 
 type recIntents struct {
+	got []dispatch.Intent
 	err error
 	mu  sync.Mutex
-	got []dispatch.Intent
 }
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
-func (s stubPub) Publish(context.Context, dispatch.Intent) error {
-	return s.err
-}
+func (s stubPub) Publish(context.Context, dispatch.Intent) error { return s.err }
 
 func (p *recIntents) Publish(_ context.Context, in dispatch.Intent) error {
 	p.mu.Lock()
@@ -52,7 +46,7 @@ func (p *recIntents) count() int {
 }
 
 func rec(key, hash, target string) enqueue.Record {
-	return enqueue.Record{
+	enq := enqueue.Record{
 		Payload:     []byte(`{"n":1}`),
 		Target:      target,
 		ProducerKey: key,
@@ -60,6 +54,8 @@ func rec(key, hash, target string) enqueue.Record {
 		Type:        domain.TypeHTTPPost,
 		MaxAttempts: 5,
 	}
+
+	return enq
 }
 
 func TestEnqueueInsertConfirm(t *testing.T) {

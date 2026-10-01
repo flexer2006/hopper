@@ -16,17 +16,11 @@ import (
 	"github.com/flexer2006/hopper/internal/replay"
 )
 
-type stubPub struct {
-	err error
-}
+type stubPub struct{ err error }
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
-func (s stubPub) Publish(context.Context, dispatch.Intent) error {
-	return s.err
-}
+func (s stubPub) Publish(context.Context, dispatch.Intent) error { return s.err }
 
 func TestReplayDeadConfirm(t *testing.T) {
 	t.Parallel()

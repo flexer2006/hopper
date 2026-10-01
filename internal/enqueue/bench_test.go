@@ -16,9 +16,12 @@ func BenchmarkEnqueueMemory(b *testing.B) {
 		return time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 	}, time.Second)
 	svc := enqueue.NewService(st, stubPub{})
+
 	payload := []byte(`{"pad":"` + strings.Repeat("a", 503) + `"}`)
+
 	ctx := b.Context()
 	b.ReportAllocs()
+
 	i := 0
 	for b.Loop() {
 		i++

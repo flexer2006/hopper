@@ -41,15 +41,14 @@ type Service struct{ store Store }
 const DefaultListLimit = 50
 
 func NewService(store Store) *Service {
-	svc := new(Service)
-	svc.store = store
+	svc := new(Service{
+		store: store,
+	})
 
 	return svc
 }
 
-func (s *Service) Get(ctx context.Context, id string) (Job, error) {
-	return s.store.Get(ctx, id)
-}
+func (s *Service) Get(ctx context.Context, id string) (Job, error) { return s.store.Get(ctx, id) }
 
 func (s *Service) ListDead(ctx context.Context) ([]Job, error) {
 	return s.store.ListDead(ctx, DefaultListLimit)

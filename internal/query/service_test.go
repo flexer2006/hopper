@@ -14,9 +14,7 @@ import (
 	"github.com/flexer2006/hopper/internal/query"
 )
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 func TestQueryGetAndListDead(t *testing.T) {
 	t.Parallel()

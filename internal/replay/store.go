@@ -33,9 +33,10 @@ type Service struct {
 var ErrInvalid = errors.New("invalid replay request")
 
 func NewService(store Store, pub Publisher) *Service {
-	svc := new(Service)
-	svc.store = store
-	svc.pub = pub
+	svc := new(Service{
+		store: store,
+		pub:   pub,
+	})
 
 	return svc
 }

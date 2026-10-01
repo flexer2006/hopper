@@ -25,10 +25,11 @@ const (
 )
 
 func NewService(store Store, pub Publisher) *Service {
-	svc := new(Service)
-	svc.store = store
-	svc.pub = pub
-	svc.newID = randomID
+	svc := new(Service{
+		store: store,
+		pub:   pub,
+		newID: randomID,
+	})
 
 	return svc
 }

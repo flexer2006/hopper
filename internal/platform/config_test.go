@@ -13,9 +13,7 @@ import (
 	"github.com/flexer2006/hopper/internal/testutil"
 )
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 func TestParseMode(t *testing.T) {
 	t.Parallel()

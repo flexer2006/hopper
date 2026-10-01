@@ -11,19 +11,14 @@ import (
 )
 
 type stubGraph struct {
-	err      error
-	startErr error
-	stopErr  error
-	started  bool
-	stopped  bool
+	err, startErr, stopErr error
+	started, stopped       bool
 }
 
 type stubProcess struct {
 	stubGraph
-
-	startTo time.Duration
-	stopTo  time.Duration
-	done    chan os.Signal
+	startTo, stopTo time.Duration
+	done            chan os.Signal
 }
 
 func (s *stubGraph) Err() error { return s.err }

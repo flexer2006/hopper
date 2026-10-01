@@ -20,12 +20,14 @@ func ParseMode(args []string) (string, error) {
 	switch args[0] {
 	case "-h", "--help", "help":
 		return "", ErrHelp
+
 	case ModeAPI, ModeWorker:
 		if len(args) > 1 {
 			return "", fmt.Errorf("%w: unexpected extra arguments", ErrInvalidMode)
 		}
 
 		return args[0], nil
+
 	default:
 		return "", fmt.Errorf("%w: %q (want api or worker)", ErrInvalidMode, args[0])
 	}

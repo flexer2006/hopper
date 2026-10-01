@@ -20,24 +20,10 @@ type Config struct {
 	HealingIntervalYAML       string        `yaml:"healing_interval"`
 	LeaseScanIntervalYAML     string        `yaml:"lease_scan_interval"`
 	HTTPAddr                  string        `yaml:"http_addr"`
-	APIShutdownTimeout        time.Duration `yaml:"-"`
-	WorkerShutdownTimeout     time.Duration `yaml:"-"`
-	RelayInterval             time.Duration `yaml:"-"`
-	HealingInterval           time.Duration `yaml:"-"`
-	LeaseScanInterval         time.Duration `yaml:"-"`
-	MaxRequestBytes           int           `yaml:"max_request_bytes"`
-	MaxPayloadBytes           int           `yaml:"max_payload_bytes"`
-	JSONMaxDepth              int           `yaml:"json_max_depth"`
-	RateLimitRPM              int           `yaml:"rate_limit_rpm"`
-	RateLimitBurst            int           `yaml:"rate_limit_burst"`
-	TrustXFFHops              int           `yaml:"trust_xff_hops"`
-	LogStackTraces            bool          `yaml:"log_stack_traces"`
 	MongoURI                  string        `yaml:"mongo_uri"`
 	AMQPURI                   string        `yaml:"amqp_uri"`
 	MongoDatabase             string        `yaml:"mongo_database"`
 	MongoJobsCollection       string        `yaml:"mongo_jobs_collection"`
-	Prefetch                  int           `yaml:"-"`
-	PrefetchYAML              *int          `yaml:"prefetch"`
 	WorkerID                  string        `yaml:"worker_id"`
 	HTTPTimeoutYAML           string        `yaml:"http_timeout"`
 	MongoOutcomeTimeoutYAML   string        `yaml:"mongo_outcome_timeout"`
@@ -46,15 +32,29 @@ type Config struct {
 	QueueJobs                 string        `yaml:"queue_jobs"`
 	QueueDLQ                  string        `yaml:"queue_dlq"`
 	ExchangeDelay             string        `yaml:"exchange_delay"`
+	APIShutdownTimeout        time.Duration `yaml:"-"`
+	WorkerShutdownTimeout     time.Duration `yaml:"-"`
+	RelayInterval             time.Duration `yaml:"-"`
+	HealingInterval           time.Duration `yaml:"-"`
+	LeaseScanInterval         time.Duration `yaml:"-"`
 	HTTPTimeout               time.Duration `yaml:"-"`
 	MongoOutcomeTimeout       time.Duration `yaml:"-"`
 	PublishConfirmTimeout     time.Duration `yaml:"-"`
 	ClaimLease                time.Duration `yaml:"-"`
-	MaxResponseBytes          int           `yaml:"-"`
+	PrefetchYAML              *int          `yaml:"prefetch"`
 	MaxResponseBytesYAML      *int          `yaml:"max_response_bytes"`
-	ReplayMax                 int           `yaml:"-"`
 	ReplayMaxYAML             *int          `yaml:"replay_max"`
+	MaxRequestBytes           int           `yaml:"max_request_bytes"`
+	MaxPayloadBytes           int           `yaml:"max_payload_bytes"`
+	JSONMaxDepth              int           `yaml:"json_max_depth"`
+	RateLimitRPM              int           `yaml:"rate_limit_rpm"`
+	RateLimitBurst            int           `yaml:"rate_limit_burst"`
+	TrustXFFHops              int           `yaml:"trust_xff_hops"`
+	Prefetch                  int           `yaml:"-"`
+	MaxResponseBytes          int           `yaml:"-"`
+	ReplayMax                 int           `yaml:"-"`
 	RetentionDays             int           `yaml:"retention_days"`
+	LogStackTraces            bool          `yaml:"log_stack_traces"`
 	RetentionEnabled          bool          `yaml:"retention_enabled"`
 }
 
@@ -162,13 +162,9 @@ func (cfg *Config) AttemptBudget() time.Duration {
 	return cfg.HTTPTimeout + cfg.MongoOutcomeTimeout + cfg.PublishConfirmTimeout + leaseBudgetMargin
 }
 
-func APIStopTimeout(cfg *Config) time.Duration {
-	return cfg.APIShutdownTimeout
-}
+func APIStopTimeout(cfg *Config) time.Duration { return cfg.APIShutdownTimeout }
 
-func WorkerStopTimeout(cfg *Config) time.Duration {
-	return cfg.WorkerShutdownTimeout
-}
+func WorkerStopTimeout(cfg *Config) time.Duration { return cfg.WorkerShutdownTimeout }
 
 func (cfg *Config) FillRuntimeDefaults() {
 	if cfg == nil {
@@ -515,8 +511,10 @@ func resolveBool(yamlVal bool, envName string) (bool, error) {
 	switch raw {
 	case "true", "1":
 		return true, nil
+
 	case "false", "0":
 		return false, nil
+
 	default:
 		return false, fmt.Errorf("%w: parse %s %q", ErrConfig, envName, raw)
 	}

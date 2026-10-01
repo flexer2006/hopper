@@ -9,9 +9,7 @@ import (
 
 const yamlOwnerRW = 0o600
 
-func ValidToken() string {
-	return strings.Repeat("a", MinAPITokenBytes)
-}
+func ValidToken() string { return strings.Repeat("a", MinAPITokenBytes) }
 
 func MinimalYAML(token string) string {
 	return "api_token: \"" + token + "\"\nlog_level: info\nlog_stack_traces: false\n"

@@ -1,4 +1,4 @@
-package fxworker
+package fworker
 
 import (
 	"context"
@@ -56,6 +56,7 @@ func (s *amqpSource) Next(ctx context.Context) (worker.Delivery, error) { //noli
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
+
 	case delivery, ok := <-deliveries:
 		if !ok {
 			return nil, errDeliveriesClosed
@@ -150,6 +151,7 @@ func requireInfrastructure(cfg *platform.Config) error {
 
 func openStore(lc fx.Lifecycle, cfg *platform.Config) *persist.Store {
 	store := new(persist.Store)
+
 	hooks := store.BindOpenClose(mongoOptions(cfg), persist.DefaultCloseTimeout)
 	lc.Append(fx.Hook{OnStart: hooks.Start, OnStop: hooks.Stop})
 

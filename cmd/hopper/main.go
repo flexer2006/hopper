@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/flexer2006/hopper/internal/fxapi"
-	"github.com/flexer2006/hopper/internal/fxworker"
+	"github.com/flexer2006/hopper/internal/fxx/fapi"
+	"github.com/flexer2006/hopper/internal/fxx/fworker"
 	"github.com/flexer2006/hopper/internal/platform"
 )
 
@@ -44,9 +44,11 @@ func run(args []string) error {
 
 	switch mode {
 	case platform.ModeAPI:
-		return fxapi.Run()
+		return fapi.Run()
+
 	case platform.ModeWorker:
-		return fxworker.Run()
+		return fworker.Run()
+
 	default:
 		return platform.ErrInvalidMode
 	}

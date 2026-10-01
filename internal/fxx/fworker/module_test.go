@@ -1,4 +1,4 @@
-package fxworker_test
+package fworker_test
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/domain"
 	"github.com/flexer2006/hopper/internal/enqueue"
-	"github.com/flexer2006/hopper/internal/fxworker"
+	"github.com/flexer2006/hopper/internal/fxx/fworker"
 	"github.com/flexer2006/hopper/internal/persist"
 	"github.com/flexer2006/hopper/internal/platform"
 	"github.com/flexer2006/hopper/internal/worker"
@@ -37,9 +37,7 @@ type onceSource struct {
 	sent atomic.Bool
 }
 
-func (nopPublisher) PublishJob(context.Context, string, string) error {
-	return nil
-}
+func (nopPublisher) PublishJob(context.Context, string, string) error { return nil }
 
 func (blockSource) Next(ctx context.Context) (worker.Delivery, error) { //nolint:ireturn // test fake Source
 	<-ctx.Done()
@@ -51,9 +49,7 @@ func (okHTTP) Post(context.Context, deliver.HTTPRequest) (deliver.HTTPResult, er
 	return deliver.HTTPResult{StatusCode: http.StatusOK}, nil
 }
 
-func (d *ackDelivery) Body() []byte {
-	return d.body
-}
+func (d *ackDelivery) Body() []byte { return d.body }
 
 func (d *ackDelivery) Ack() error {
 	select {
@@ -92,14 +88,12 @@ func frozenMemory() *persist.Store {
 	}, 30*time.Second)
 }
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 func TestNewAppStartStop(t *testing.T) { //nolint:paralleltest // t.Setenv is process-wide
 	bindWorker(t)
 
-	err := platform.StartStop(t.Context(), fxworker.NewApp(fx.NopLogger))
+	err := platform.StartStop(t.Context(), fworker.NewApp(fx.NopLogger))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +103,7 @@ func TestNewAppStopTimeoutFromYAML(t *testing.T) {
 	bindWorker(t)
 	t.Setenv(platform.WorkerShutdownTimeoutEnv, "8s")
 
-	app := fxworker.NewApp(fx.NopLogger)
+	app := fworker.NewApp(fx.NopLogger)
 	if app.StopTimeout() != 8*time.Second {
 		t.Fatalf("StopTimeout = %s, want 8s", app.StopTimeout())
 	}
@@ -120,7 +114,7 @@ func TestNewAppConsumeLifecycle(t *testing.T) { //nolint:paralleltest // t.Seten
 
 	st := frozenMemory()
 
-	err := platform.StartStop(t.Context(), fxworker.NewApp(
+	err := platform.StartStop(t.Context(), fworker.NewApp(
 		fx.NopLogger,
 		fx.Provide(func() dispatch.Jobs { return st }),
 		fx.Provide(func() deliver.Jobs { return st }),
@@ -140,7 +134,7 @@ func TestNewAppConsumeWithoutPublisherAcks(t *testing.T) { //nolint:paralleltest
 		Payload:     []byte(`{"n":1}`),
 		ID:          "aaaaaaaaaaaaaaaaaaaaaaaa",
 		Target:      "https://example.com/hook",
-		ProducerKey: "idem-fxworker",
+		ProducerKey: "idem-fworker",
 		RequestHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		Type:        domain.TypeHTTPPost,
 		MaxAttempts: 5,
@@ -156,7 +150,7 @@ func TestNewAppConsumeWithoutPublisherAcks(t *testing.T) { //nolint:paralleltest
 
 	done := make(chan struct{})
 	src := &onceSource{msg: &ackDelivery{body: body, done: done}}
-	app := fxworker.NewApp(
+	app := fworker.NewApp(
 		fx.NopLogger,
 		fx.Provide(func() deliver.Jobs { return st }),
 		fx.Provide(func() worker.Source { return src }),
@@ -200,7 +194,7 @@ func TestNewAppRelayLifecycle(t *testing.T) { //nolint:paralleltest // t.Setenv 
 
 	st := frozenMemory()
 
-	err := platform.StartStop(t.Context(), fxworker.NewApp(
+	err := platform.StartStop(t.Context(), fworker.NewApp(
 		fx.NopLogger,
 		fx.Provide(func() dispatch.Jobs { return st }),
 		fx.Provide(func() dispatch.Publisher { return nopPublisher{} }),

@@ -1,4 +1,4 @@
-package fxapi
+package fapi
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package fxapi_test
+package fapi_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/flexer2006/hopper/internal/dispatch"
 	"github.com/flexer2006/hopper/internal/enqueue"
-	"github.com/flexer2006/hopper/internal/fxapi"
+	"github.com/flexer2006/hopper/internal/fxx/fapi"
 	"github.com/flexer2006/hopper/internal/persist"
 	"github.com/flexer2006/hopper/internal/platform"
 	"github.com/flexer2006/hopper/internal/query"
@@ -39,7 +39,7 @@ func TestNewAppStartStop(t *testing.T) {
 	bindAPI(t)
 	t.Setenv(platform.HTTPAddrEnv, "127.0.0.1:0")
 
-	err := platform.StartStop(t.Context(), fxapi.NewApp(fx.NopLogger))
+	err := platform.StartStop(t.Context(), fapi.NewApp(fx.NopLogger))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestNewAppRejectsShortToken(t *testing.T) {
 	t.Setenv(platform.ConfigFileEnv, path)
 	t.Setenv(platform.HTTPAddrEnv, "127.0.0.1:0")
 
-	err = fxapi.NewApp(fx.NopLogger).Start(t.Context())
+	err = fapi.NewApp(fx.NopLogger).Start(t.Context())
 	if err == nil {
 		t.Fatal("expected start error for short token")
 	}
@@ -64,7 +64,7 @@ func TestNewAppStopTimeoutFromYAML(t *testing.T) {
 	bindAPI(t)
 	t.Setenv(platform.APIShutdownTimeoutEnv, "5s")
 
-	app := fxapi.NewApp(fx.NopLogger)
+	app := fapi.NewApp(fx.NopLogger)
 	if app.StopTimeout() != 5*time.Second {
 		t.Fatalf("StopTimeout = %s, want 5s", app.StopTimeout())
 	}
@@ -82,7 +82,7 @@ func TestNewAppRelayLifecycle(t *testing.T) {
 		return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	}, 30*time.Second)
 
-	err := platform.StartStop(t.Context(), fxapi.NewApp(
+	err := platform.StartStop(t.Context(), fapi.NewApp(
 		fx.NopLogger,
 		fx.Provide(func() dispatch.Jobs { return st }),
 		fx.Provide(func() dispatch.Publisher { return nopPublisher{} }),

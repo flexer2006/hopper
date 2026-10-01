@@ -1,4 +1,4 @@
-package fxworker
+package fapi
 
 import (
 	"go.uber.org/fx"
@@ -6,17 +6,19 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/flexer2006/hopper/internal/fxboot"
+	"github.com/flexer2006/hopper/internal/fxx/fboot"
 	"github.com/flexer2006/hopper/internal/platform"
 )
 
 func Module() fx.Option { //nolint:ireturn // fx.Option is the composition contract.
-	return fx.Module("worker",
+	return fx.Module("api",
 		fx.Provide(platform.NewLogger),
-		fx.Provide(newHTTP),
 		fx.Provide(newRelayHolder),
+		fx.Provide(newEnqueue),
+		fx.Provide(newQuery),
+		fx.Provide(newReplay),
 		fx.Invoke(startHeldRelay),
-		fx.Invoke(startWorker),
+		fx.Invoke(startHTTP),
 		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
 			zl := new(fxevent.ZapLogger{Logger: log})
 			zl.UseLogLevel(zapcore.DebugLevel)
@@ -27,9 +29,9 @@ func Module() fx.Option { //nolint:ireturn // fx.Option is the composition contr
 }
 
 func NewApp(opts ...fx.Option) *fx.App {
-	return fxboot.NewApp(platform.DefaultWorkerShutdownTimeout, platform.WorkerStopTimeout, Module(), opts...)
+	return fboot.NewApp(platform.DefaultAPIShutdownTimeout, platform.APIStopTimeout, Module(), opts...)
 }
 
 func Run() error {
-	return platform.RunProcess("worker", NewApp(Production()))
+	return platform.RunProcess("api", NewApp(Production()))
 }

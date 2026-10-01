@@ -94,18 +94,21 @@ components:
     in:
       - internal/platform
       - internal/platform/**
-  fxboot:
+  fxx:
     in:
-      - internal/fxboot
-      - internal/fxboot/**
-  fxapi:
+      - internal/fxx
+  fboot:
     in:
-      - internal/fxapi
-      - internal/fxapi/**
-  fxworker:
+      - internal/fxx/fboot
+      - internal/fxx/fboot/**
+  fapi:
     in:
-      - internal/fxworker
-      - internal/fxworker/**
+      - internal/fxx/fapi
+      - internal/fxx/fapi/**
+  fworker:
+    in:
+      - internal/fxx/fworker
+      - internal/fxx/fworker/**
   cmd:
     in:
       - cmd/hopper
@@ -202,15 +205,19 @@ deps:
       - deliver
     canUse: []
 
-  fxboot:
+  fxx:
+    mayDependOn: []
+    anyVendorDeps: true
+
+  fboot:
     mayDependOn:
       - platform
     canUse:
       - fx
 
-  fxapi:
+  fapi:
     mayDependOn:
-      - fxboot
+      - fboot
       - platform
       - httpapi
       - enqueue
@@ -225,9 +232,9 @@ deps:
       - config
       - amqp
 
-  fxworker:
+  fworker:
     mayDependOn:
-      - fxboot
+      - fboot
       - platform
       - worker
       - deliver
@@ -244,8 +251,8 @@ deps:
 
   cmd:
     mayDependOn:
-      - fxapi
-      - fxworker
+      - fapi
+      - fworker
       - platform
     canUse: []
 

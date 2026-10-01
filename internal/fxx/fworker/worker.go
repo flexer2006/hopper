@@ -1,4 +1,4 @@
-package fxworker
+package fworker
 
 import (
 	"context"
@@ -23,15 +23,15 @@ type auxDLQ struct{ pub *broker.Publisher }
 type workerLife struct {
 	fx.In
 
+	Jobs       deliver.Jobs `optional:"true"`
+	Client     deliver.HTTP `optional:"true"`
 	LC         fx.Lifecycle
 	Shutdowner fx.Shutdowner
+	Source     worker.Source `optional:"true"`
 	Log        *zap.Logger
 	Holder     *relayHolder
 	Cfg        *platform.Config
-	Jobs       deliver.Jobs      `optional:"true"`
-	Client     deliver.HTTP      `optional:"true"`
 	Pub        *broker.Publisher `optional:"true"`
-	Source     worker.Source     `optional:"true"`
 }
 
 const (
@@ -191,6 +191,7 @@ func waitDone(ctx context.Context, wg *sync.WaitGroup) error {
 	select {
 	case <-done:
 		return nil
+
 	case <-ctx.Done():
 		return ctx.Err()
 	}

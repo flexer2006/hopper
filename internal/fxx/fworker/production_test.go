@@ -1,4 +1,4 @@
-package fxworker //nolint:testpackage // unexported holders, checkers, source, and bind options
+package fworker //nolint:testpackage // unexported holders, checkers, source, and bind options
 
 import (
 	"context"
@@ -26,13 +26,13 @@ import (
 type ports struct {
 	fx.In
 
+	Checks       []httpapi.Checker `group:"health"`
+	DispatchPub  dispatch.Publisher
 	Jobs         deliver.Jobs
 	DispatchJobs dispatch.Jobs
 	Source       worker.Source
 	Pub          *broker.Publisher
-	DispatchPub  dispatch.Publisher
 	Holder       *relayHolder
-	Checks       []httpapi.Checker `group:"health"`
 }
 
 type shutdownWatch struct {
@@ -97,11 +97,12 @@ func checkNames(checks []httpapi.Checker) map[string]httpapi.Checker {
 func TestMongoOptionsLeaseMatchesClaimLease(t *testing.T) {
 	t.Parallel()
 
-	cfg := new(platform.Config)
-	cfg.MongoURI = replicaMongoURI
-	cfg.MongoDatabase = "hopper"
-	cfg.MongoJobsCollection = "jobs"
-	cfg.LeaseScanInterval = time.Second
+	cfg := new(platform.Config{
+		MongoURI:            replicaMongoURI,
+		MongoDatabase:       "hopper",
+		MongoJobsCollection: "jobs",
+		LeaseScanInterval:   time.Second,
+	})
 
 	opts := mongoOptions(cfg)
 	if opts.Lease != claimLease {
@@ -448,6 +449,7 @@ func TestUnexpectedSourceErrorShutsDownProcess(t *testing.T) {
 	store := persist.NewMemory(nil, 0)
 	closed := make(chan amqp.Delivery)
 	close(closed)
+
 	res := aliveResources(closed)
 	seen := make(chan struct{}, 1)
 

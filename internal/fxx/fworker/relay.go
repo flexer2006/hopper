@@ -1,4 +1,4 @@
-package fxworker
+package fworker
 
 import (
 	"go.uber.org/fx"
@@ -13,10 +13,10 @@ type relayHolder struct{ relay *dispatch.Relay }
 type relayIn struct {
 	fx.In
 
-	Log       *zap.Logger
-	Cfg       *platform.Config
 	Jobs      dispatch.Jobs      `optional:"true"`
 	Publisher dispatch.Publisher `optional:"true"`
+	Log       *zap.Logger
+	Cfg       *platform.Config
 }
 
 type relayLife struct {

@@ -1,4 +1,4 @@
-package fxboot
+package fboot
 
 import (
 	"time"
@@ -24,6 +24,7 @@ func NewApp(
 	}
 
 	base := make([]fx.Option, 0, baseOptionCount+len(opts))
+
 	base = append(base,
 		fx.StopTimeout(timeout),
 		fx.Provide(func() (*platform.Config, error) {
@@ -35,6 +36,7 @@ func NewApp(
 		}),
 		module,
 	)
+
 	base = append(base, opts...)
 
 	return fx.New(base...)

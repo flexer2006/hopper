@@ -1,4 +1,4 @@
-package fxapi //nolint:testpackage // unexported holders, checkers, and bind options
+package fapi //nolint:testpackage // unexported holders, checkers, and bind options
 
 import (
 	"errors"

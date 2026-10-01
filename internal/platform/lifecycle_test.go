@@ -17,6 +17,7 @@ type stubGraph struct {
 
 type stubProcess struct {
 	stubGraph
+
 	startTo, stopTo time.Duration
 	done            chan os.Signal
 }

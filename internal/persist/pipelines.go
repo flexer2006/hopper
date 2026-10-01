@@ -121,6 +121,7 @@ func OutcomePipeline(in deliver.OutcomeIn) mongo.Pipeline {
 		{Key: fStatus, Value: string(in.Status)},
 		{Key: fUpdatedAt, Value: serverNow},
 	}
+
 	stages := mongo.Pipeline{
 		bson.D{{Key: opSet, Value: set}},
 		unsetFence(),
@@ -149,6 +150,7 @@ func retryOutcomeStages(in deliver.OutcomeIn) mongo.Pipeline {
 
 	dispatchSet := pendingDispatch(intent, queue, pathCycle)
 	dispatchSet = append(dispatchSet, bson.E{Key: "attempt", Value: in.AttemptsDone})
+
 	setFields := bson.D{
 		{Key: fDispatchHistory, Value: historyConcat()},
 		{Key: fDispatch, Value: dispatchSet},
@@ -158,7 +160,9 @@ func retryOutcomeStages(in deliver.OutcomeIn) mongo.Pipeline {
 
 	if in.DelaySeconds > 0 {
 		due := bson.D{{Key: opAdd, Value: bson.A{serverNow, int64(in.DelaySeconds) * msPerSecond}}}
+
 		dispatchSet = append(dispatchSet, bson.E{Key: fNotBefore, Value: due})
+
 		setFields[1].Value = dispatchSet
 		setFields = append(setFields, bson.E{Key: fNotBefore, Value: due})
 	} else {

@@ -20,8 +20,8 @@ import (
 )
 
 type frozenClock struct {
-	mu sync.Mutex
 	ts time.Time
+	mu sync.Mutex
 }
 
 const (
@@ -32,9 +32,7 @@ const (
 	testWorker = "worker-1"
 )
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 func newClock(t *testing.T) *frozenClock {
 	t.Helper()
@@ -161,6 +159,7 @@ func TestInsertValidationLeavesStoreEmpty(t *testing.T) {
 
 	oversize := testRecord(testJobID, testKey, 5)
 	oversize.Payload = []byte(`[]`)
+
 	err = st.Insert(t.Context(), oversize)
 	if !errors.Is(err, persist.ErrPayload) {
 		t.Fatalf("Insert() array payload err = %v, want ErrPayload", err)
@@ -171,6 +170,7 @@ func TestClaimSuccessAndStaleFence(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 	out := mustClaim(t, st)
 
@@ -219,6 +219,7 @@ func TestSuccessOutcomeDoesNotBumpGeneration(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
 	err := st.MarkPublished(t.Context(), testJobID, 1)
@@ -253,6 +254,7 @@ func TestRetryOutcomeNotBeforeAndGenerationCAS(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
 	err := st.MarkPublished(t.Context(), testJobID, 1)
@@ -299,20 +301,21 @@ func TestClaimCompetingOneWinner(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
 	const n = 8
+
 	var wg sync.WaitGroup
 	errs := make([]error, n)
-	wg.Add(n)
+
 	for i := range n {
-		go func(i int) {
-			defer wg.Done()
+		wg.Go(func() {
 			_, errs[i] = st.Claim(t.Context(), deliver.ClaimIn{
 				ID:       testJobID,
 				WorkerID: testWorker,
 			})
-		}(i)
+		})
 	}
 	wg.Wait()
 
@@ -322,6 +325,7 @@ func TestClaimCompetingOneWinner(t *testing.T) {
 			wins++
 			continue
 		}
+
 		if !errors.Is(errs[i], persist.ErrLeaseHeld) {
 			t.Fatalf("loser err = %v, want ErrLeaseHeld", errs[i])
 		}
@@ -337,6 +341,7 @@ func TestDeliveryStartsCap(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 1))
 
 	for range 4 {
@@ -364,6 +369,7 @@ func TestRecoverExpiredLeaseFakeClock(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 	mustClaim(t, st)
 
@@ -405,8 +411,10 @@ func TestClaimVsExpiredLeaseRecoverRace(t *testing.T) {
 	for range 32 {
 		clk := newClock(t)
 		st := newStore(t, clk, 30*time.Second)
+
 		mustInsert(t, st, testRecord(testJobID, testKey, 5))
 		mustClaim(t, st)
+
 		clk.add(31 * time.Second)
 
 		var wg sync.WaitGroup
@@ -533,6 +541,7 @@ func TestCommitOutcomeWrongCycleAfterReplay(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
 	out := mustClaim(t, st)
@@ -629,8 +638,10 @@ func TestInsertMoreValidation(t *testing.T) {
 	t.Parallel()
 
 	st := persist.NewMemory(nil, 0)
+
 	rec := testRecord(testJobID, testKey, 5)
 	rec.RequestHash = "zz"
+
 	err := st.Insert(t.Context(), rec)
 	if !errors.Is(err, persist.ErrInvalidHash) {
 		t.Fatalf("bad hash err = %v", err)
@@ -682,8 +693,10 @@ func TestClaimExpiredLeaseSkip(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 	mustClaim(t, st)
+
 	clk.add(2 * time.Second)
 
 	_, err := st.Claim(t.Context(), deliver.ClaimIn{ID: testJobID, WorkerID: testWorker})
@@ -696,7 +709,9 @@ func TestDuplicateJobID(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
+
 	err := st.Insert(t.Context(), testRecord(testJobID, "idem-other", 5))
 	if !errors.Is(err, persist.ErrDuplicateKey) {
 		t.Fatalf("dup id err = %v", err)
@@ -707,7 +722,9 @@ func TestOutcomeRecordsAttempts(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
+
 	out := mustClaim(t, st)
 	err := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
 		Attempts: []domain.Attempt{{
@@ -732,6 +749,7 @@ func TestCommitOutcomeEmptyFence(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, time.Second)
+
 	err := st.CommitOutcome(t.Context(), deliver.OutcomeIn{
 		ID:     testJobID,
 		Status: domain.StatusSucceeded,
@@ -746,6 +764,7 @@ func TestHexRejectsUppercase(t *testing.T) {
 
 	st := newStore(t, nil, time.Second)
 	rec := testRecord("AAAAAAAAAAAAAAAAaaaaaaaa", testKey, 5)
+
 	err := st.Insert(t.Context(), rec)
 	if !errors.Is(err, persist.ErrInvalidID) {
 		t.Fatalf("uppercase id err = %v", err)
@@ -756,6 +775,7 @@ func TestListDead(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
 	items, err := st.ListDead(t.Context(), 10)
@@ -786,11 +806,13 @@ func TestListDeadOrderAndClamp(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, 30*time.Second)
+
 	n := query.DefaultListLimit + 1
 	newest := ""
 
 	for i := range n {
 		id := fmt.Sprintf("%024x", i+1)
+
 		mustInsert(t, st, testRecord(id, fmt.Sprintf("idem-%d", i), 1))
 
 		out, err := st.Claim(t.Context(), deliver.ClaimIn{ID: id, WorkerID: testWorker})
@@ -843,6 +865,7 @@ func TestReplayResetsCountersAndHistory(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 	out := mustClaim(t, st)
 
@@ -904,6 +927,7 @@ func TestDeadOutcomeForcesDLQQueue(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 	out := mustClaim(t, st)
 

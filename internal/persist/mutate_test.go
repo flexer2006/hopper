@@ -63,6 +63,7 @@ func TestHealingEligibleGates(t *testing.T) {
 
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	age := 30 * time.Second
+
 	old := now.Add(-age)
 	recent := now.Add(-time.Second)
 	future := now.Add(time.Minute)

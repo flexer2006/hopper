@@ -44,9 +44,9 @@ type closer interface {
 
 type Store struct {
 	coll     collection
+	client   closer
 	now      func() time.Time
 	newFence func() (string, error)
-	client   closer
 	lease    time.Duration
 }
 
@@ -67,11 +67,13 @@ func NewMemory(now func() time.Time, lease time.Duration) *Store {
 		lease = defaultLease
 	}
 
-	store := new(Store)
-	store.coll = newMem(now)
-	store.now = now
-	store.newFence = randomFence
-	store.lease = lease
+	store := new(Store{
+		coll:     newMem(now),
+		client:   nil,
+		now:      now,
+		newFence: randomFence,
+		lease:    lease,
+	})
 
 	return store
 }
@@ -283,18 +285,19 @@ func validateOutcome(in deliver.OutcomeIn) error {
 }
 
 func runningClaim(doc *jobDoc) deliver.ClaimOut {
-	out := new(deliver.ClaimOut)
-	out.Payload = payloadJSON(doc.Payload)
-	out.Attempts = domainAttemptRows(doc.Attempts)
-	out.Target = doc.Target
-	out.FenceToken = doc.FenceToken
-	out.ID = doc.ID
-	out.Status = domain.Status(doc.Status)
-	out.Cycle = doc.Cycle
-	out.Attempt = doc.AttemptsDone + 1
-	out.MaxAttempts = doc.MaxAttempts
+	out := deliver.ClaimOut{
+		Payload:     payloadJSON(doc.Payload),
+		Attempts:    domainAttemptRows(doc.Attempts),
+		Target:      doc.Target,
+		FenceToken:  doc.FenceToken,
+		ID:          doc.ID,
+		Status:      domain.Status(doc.Status),
+		Cycle:       doc.Cycle,
+		Attempt:     doc.AttemptsDone + 1,
+		MaxAttempts: doc.MaxAttempts,
+	}
 
-	return *out
+	return out
 }
 
 func randomFence() (string, error) {

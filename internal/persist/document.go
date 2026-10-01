@@ -14,15 +14,13 @@ import (
 )
 
 type jobDoc struct {
+	Dispatch        dispatchDoc   `bson:"dispatch"`
 	Attempts        []attemptDoc  `bson:"attempts"`
 	DispatchHistory []dispatchDoc `bson:"dispatch_history,omitempty"`
 	ReplayHistory   []replayDoc   `bson:"replay_history,omitempty"`
 	Payload         bson.Raw      `bson:"payload"`
-	Dispatch        dispatchDoc   `bson:"dispatch"`
 	CreatedAt       time.Time     `bson:"created_at"`
 	UpdatedAt       time.Time     `bson:"updated_at"`
-	NotBefore       *time.Time    `bson:"not_before,omitempty"`
-	ClaimExpiresAt  *time.Time    `bson:"claim_expires_at,omitempty"`
 	ID              string        `bson:"_id"` //nolint:tagliatelle // Mongo document primary key
 	Type            string        `bson:"type"`
 	Target          string        `bson:"target"`
@@ -31,6 +29,8 @@ type jobDoc struct {
 	RequestHash     string        `bson:"request_hash"`
 	FenceToken      string        `bson:"fence_token,omitempty"`
 	ClaimedBy       string        `bson:"claimed_by,omitempty"`
+	NotBefore       *time.Time    `bson:"not_before,omitempty"`
+	ClaimExpiresAt  *time.Time    `bson:"claim_expires_at,omitempty"`
 	Cycle           int           `bson:"cycle"`
 	AttemptsDone    int           `bson:"attempts_done"`
 	DeliveryStarts  int           `bson:"delivery_starts"`
@@ -51,11 +51,11 @@ type attemptDoc struct {
 
 type dispatchDoc struct {
 	CreatedAt   time.Time  `bson:"created_at"`
-	PublishedAt *time.Time `bson:"published_at,omitempty"`
-	NotBefore   *time.Time `bson:"not_before,omitempty"`
 	Intent      string     `bson:"intent"`
 	Queue       string     `bson:"queue"`
 	Status      string     `bson:"status"`
+	PublishedAt *time.Time `bson:"published_at,omitempty"`
+	NotBefore   *time.Time `bson:"not_before,omitempty"`
 	Generation  int        `bson:"generation"`
 	Cycle       int        `bson:"cycle,omitempty"`
 	Attempt     int        `bson:"attempt,omitempty"`
@@ -230,8 +230,10 @@ func payloadJSON(raw bson.Raw) json.RawMessage {
 
 func queryAttempts(rows []attemptDoc) []query.Attempt {
 	out := make([]query.Attempt, 0, len(rows))
+
 	for i := range rows {
 		row := rows[i]
+
 		out = append(out, query.Attempt{
 			At:           row.At,
 			Error:        row.Error,
@@ -249,8 +251,10 @@ func queryAttempts(rows []attemptDoc) []query.Attempt {
 
 func queryReplays(rows []replayDoc) []query.ReplayEvent {
 	out := make([]query.ReplayEvent, 0, len(rows))
+
 	for i := range rows {
 		row := rows[i]
+
 		out = append(out, query.ReplayEvent{
 			At:        row.At,
 			By:        row.By,
@@ -264,8 +268,10 @@ func queryReplays(rows []replayDoc) []query.ReplayEvent {
 
 func domainAttemptRows(rows []attemptDoc) []domain.Attempt {
 	out := make([]domain.Attempt, 0, len(rows))
+
 	for i := range rows {
 		row := rows[i]
+
 		out = append(out, domain.Attempt{
 			At:           row.At,
 			Error:        row.Error,
@@ -283,8 +289,10 @@ func domainAttemptRows(rows []attemptDoc) []domain.Attempt {
 
 func mapAttempts(rows []domain.Attempt) []attemptDoc {
 	out := make([]attemptDoc, 0, len(rows))
+
 	for i := range rows {
 		row := rows[i]
+
 		out = append(out, attemptDoc{
 			At:           row.At,
 			Error:        row.Error,

@@ -15,6 +15,7 @@ func TestListPendingAndPromoteDueRetry(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
 	pending, err := st.ListPending(t.Context(), 8)
@@ -53,6 +54,7 @@ func TestListDueHealingAndStartHealing(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
 	err := st.MarkPublished(t.Context(), testJobID, 1)
@@ -88,6 +90,7 @@ func TestListDueHealingSkipsPendingDispatch(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
 	clk.add(30 * time.Second)
@@ -103,6 +106,7 @@ func TestStartHealingWrongGenerationWhileEligible(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
 	err := st.MarkPublished(t.Context(), testJobID, 1)
@@ -127,6 +131,7 @@ func TestListPendingClampsLimit(t *testing.T) {
 	t.Parallel()
 
 	st := newStore(t, nil, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 	mustInsert(t, st, testRecord("cccccccccccccccccccccccc", "idem-2", 5))
 
@@ -151,6 +156,7 @@ func TestStartHealingSkipsFutureNotBefore(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 
 	out := mustClaim(t, st)
@@ -199,6 +205,7 @@ func TestListExpiredLeasesFakeClock(t *testing.T) {
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 	mustInsert(t, st, testRecord(secondID, "idem-2", 5))
 	mustClaim(t, st)
+
 	_, err := st.Claim(t.Context(), deliver.ClaimIn{ID: secondID, WorkerID: testWorker})
 	if err != nil {
 		t.Fatal(err)
@@ -237,6 +244,7 @@ func TestListExpiredLeasesSkipsNonRunning(t *testing.T) {
 
 	clk := newClock(t)
 	st := newStore(t, clk, 30*time.Second)
+
 	mustInsert(t, st, testRecord(testJobID, testKey, 5))
 	mustInsert(t, st, testRecord("cccccccccccccccccccccccc", "idem-2", 5))
 	out := mustClaim(t, st)

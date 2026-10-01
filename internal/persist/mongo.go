@@ -15,9 +15,7 @@ import (
 	"github.com/flexer2006/hopper/internal/domain"
 )
 
-type mongoColl struct {
-	coll *mongo.Collection
-}
+type mongoColl struct{ coll *mongo.Collection }
 
 func MapDriverError(op string, err error) error {
 	if err == nil {

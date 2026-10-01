@@ -109,6 +109,7 @@ func TestCheckLeaseBudget(t *testing.T) {
 	httpTimeout := 10 * time.Second
 	outcome := 5 * time.Second
 	confirm := 5 * time.Second
+
 	err := persist.CheckLeaseBudget(24*time.Second, httpTimeout, outcome, confirm)
 	if !errors.Is(err, persist.ErrLeaseBudget) {
 		t.Fatalf("short lease err = %v", err)

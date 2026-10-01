@@ -10,10 +10,8 @@ import (
 )
 
 type fakeClient struct {
-	pingErr       error
-	disconnectErr error
-	pings         int
-	disconnects   int
+	pingErr, disconnectErr error
+	pings, disconnects     int
 }
 
 const replicaURI = "mongodb://localhost:27017/?replicaSet=rs0"
@@ -45,6 +43,7 @@ func TestStoreOpenRejectsAlreadyOpenWithoutDialing(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeClient{}
+
 	store := new(Store)
 	store.client = client
 
@@ -66,6 +65,7 @@ func TestStoreAdoptCopiesEveryField(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeClient{}
+
 	now := func() time.Time { return time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC) }
 	fence := func() (string, error) { return "fence", nil }
 
@@ -97,7 +97,9 @@ func TestStoreCloseReleasesClientAndPingReportsNotOpen(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeClient{}
+
 	store := new(Store)
+
 	store.coll = newMem(nil)
 	store.client = client
 
@@ -134,7 +136,9 @@ func TestStoreCloseKeepsClientOnDisconnectError(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("disconnect")
+
 	client := &fakeClient{disconnectErr: want}
+
 	store := new(Store)
 	store.client = client
 
@@ -152,6 +156,7 @@ func TestStorePingPropagatesDriverError(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("ping")
+
 	store := new(Store)
 	store.client = &fakeClient{pingErr: want}
 
@@ -165,7 +170,9 @@ func TestBindOpenCloseStartWrapsOpen(t *testing.T) {
 	t.Parallel()
 
 	store := new(Store)
+
 	hooks := store.BindOpenClose(Options{}, 0)
+
 	err := hooks.Start(t.Context())
 	if !errors.Is(err, ErrStandalone) {
 		t.Fatalf("start err = %v, want ErrStandalone", err)
@@ -181,10 +188,12 @@ func TestBindOpenCloseStopDisconnects(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeClient{}
+
 	store := new(Store)
 	store.client = client
 
 	hooks := store.BindOpenClose(Options{}, time.Second)
+
 	err := hooks.Stop(t.Context())
 	if err != nil {
 		t.Fatal(err)

@@ -19,10 +19,12 @@ type mem struct {
 }
 
 func newMem(now func() time.Time) *mem {
-	store := new(mem)
-	store.now = now
-	store.docs = make(map[string]jobDoc)
-	store.keys = make(map[string]string)
+	store := new(mem{
+		now:  now,
+		docs: make(map[string]jobDoc),
+		keys: make(map[string]string),
+		mu:   sync.Mutex{},
+	})
 
 	return store
 }
@@ -219,6 +221,7 @@ func (m *mem) listPending(_ context.Context, limit int) ([]jobDoc, error) {
 
 	for i := range m.docs {
 		doc := m.docs[i]
+
 		if doc.Dispatch.Status == dispatch.StatusPending {
 			out = append(out, doc)
 		}
@@ -236,6 +239,7 @@ func (m *mem) listExpiredLeases(_ context.Context, limit int) ([]jobDoc, error) 
 
 	for id := range m.docs {
 		doc := m.docs[id]
+
 		if leaseExpired(&doc, now) {
 			out = append(out, doc)
 		}
@@ -253,6 +257,7 @@ func (m *mem) listDueHealing(_ context.Context, age time.Duration, limit int) ([
 
 	for i := range m.docs {
 		doc := m.docs[i]
+
 		if healingEligible(&doc, now, age) {
 			out = append(out, doc)
 		}
@@ -269,6 +274,7 @@ func (m *mem) listDead(_ context.Context, limit int) ([]jobDoc, error) {
 
 	for i := range m.docs {
 		doc := m.docs[i]
+
 		if doc.Status == string(domain.StatusDead) {
 			out = append(out, doc)
 		}

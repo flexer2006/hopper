@@ -34,6 +34,7 @@ func TestListExpiredLeasesUsesIDProjection(t *testing.T) {
 
 		start := fset.Position(fn.Body.Pos()).Offset
 		end := fset.Position(fn.Body.End()).Offset
+
 		body = string(raw[start:end])
 
 		break

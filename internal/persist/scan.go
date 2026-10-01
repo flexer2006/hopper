@@ -22,6 +22,7 @@ func clampScan(limit int) int {
 
 func mapIntents(docs []jobDoc) []dispatch.Intent {
 	out := make([]dispatch.Intent, 0, len(docs))
+
 	for i := range docs {
 		out = append(out, docs[i].intent())
 	}

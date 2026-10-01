@@ -1,6 +1,7 @@
 package persist
 
 import (
+	"slices"
 	"time"
 
 	"github.com/flexer2006/hopper/internal/deliver"
@@ -31,9 +32,7 @@ func leaseExpired(doc *jobDoc, now time.Time) bool {
 //nolint:gocritic // hugeParam: dispatch intent value
 func rotateDispatch(doc *jobDoc, next dispatchDoc) {
 	prev := doc.Dispatch
-	hist := make([]dispatchDoc, 0, len(doc.DispatchHistory)+1)
-	hist = append(hist, prev)
-	hist = append(hist, doc.DispatchHistory...)
+	hist := slices.Concat([]dispatchDoc{prev}, doc.DispatchHistory)
 
 	if len(hist) > dispatchHistoryCap {
 		hist = hist[:dispatchHistoryCap]
@@ -45,6 +44,7 @@ func rotateDispatch(doc *jobDoc, next dispatchDoc) {
 
 func applyClaim(doc *jobDoc, now time.Time, lease time.Duration, fence, worker string) {
 	expires := now.Add(lease)
+
 	doc.Status = string(domain.StatusRunning)
 	doc.FenceToken = fence
 	doc.ClaimedBy = worker
@@ -65,7 +65,9 @@ func applyCapDead(doc *jobDoc, now time.Time) {
 		Cycle:       doc.Cycle,
 		Attempt:     0,
 	}
+
 	rotateDispatch(doc, next)
+
 	doc.Status = string(domain.StatusDead)
 	doc.FenceToken = ""
 	doc.ClaimedBy = ""
@@ -118,6 +120,7 @@ func applyOutcome(doc *jobDoc, now time.Time, in deliver.OutcomeIn) {
 		Cycle:       doc.Cycle,
 		Attempt:     in.AttemptsDone,
 	}
+
 	if in.DelaySeconds > 0 {
 		due := now.Add(time.Duration(in.DelaySeconds) * time.Second)
 		doc.NotBefore = &due
@@ -141,6 +144,7 @@ func applyEnqueuePending(doc *jobDoc, now time.Time) {
 		Cycle:       doc.Cycle,
 		Attempt:     0,
 	}
+
 	rotateDispatch(doc, next)
 	doc.NotBefore = nil
 	doc.UpdatedAt = now
@@ -148,6 +152,7 @@ func applyEnqueuePending(doc *jobDoc, now time.Time) {
 
 func applyLeaseRecover(doc *jobDoc, now time.Time) {
 	applyEnqueuePending(doc, now)
+
 	doc.Status = string(domain.StatusQueued)
 	doc.FenceToken = ""
 	doc.ClaimedBy = ""
@@ -172,6 +177,7 @@ func healingEligible(doc *jobDoc, now time.Time, age time.Duration) bool {
 
 func applyReplay(doc *jobDoc, now time.Time, by string) {
 	from := doc.Cycle
+
 	next := dispatchDoc{
 		CreatedAt:   now,
 		PublishedAt: nil,
@@ -183,10 +189,13 @@ func applyReplay(doc *jobDoc, now time.Time, by string) {
 		Cycle:       from + 1,
 		Attempt:     0,
 	}
+
 	rotateDispatch(doc, next)
-	hist := make([]replayDoc, 0, len(doc.ReplayHistory)+1)
-	hist = append(hist, replayDoc{At: now, By: by, FromCycle: from, ToCycle: from + 1})
-	hist = append(hist, doc.ReplayHistory...)
+
+	hist := slices.Concat(
+		[]replayDoc{{At: now, By: by, FromCycle: from, ToCycle: from + 1}},
+		doc.ReplayHistory,
+	)
 
 	if len(hist) > replayHistoryCap {
 		hist = hist[:replayHistoryCap]
@@ -207,6 +216,7 @@ func applyReplay(doc *jobDoc, now time.Time, by string) {
 
 func applyMarkPublished(doc *jobDoc, now time.Time) {
 	published := now
+
 	doc.Dispatch.Status = dispatch.StatusPublished
 	doc.Dispatch.PublishedAt = &published
 	doc.UpdatedAt = now
@@ -216,18 +226,21 @@ func classifySkip(doc *jobDoc, now time.Time) error {
 	switch domain.Status(doc.Status) {
 	case domain.StatusSucceeded, domain.StatusDead:
 		return ErrTerminal
+
 	case domain.StatusRunning:
 		if doc.ClaimExpiresAt != nil && !doc.ClaimExpiresAt.Before(now) {
 			return ErrLeaseHeld
 		}
 
 		return ErrNotRunning
+
 	case domain.StatusQueued:
 		if !isDue(doc, now) {
 			return ErrNotDue
 		}
 
 		return ErrClaimConflict
+
 	default:
 		return ErrNotFound
 	}

@@ -20,9 +20,12 @@ func BenchmarkInsert(b *testing.B) {
 	st := persist.NewMemory(func() time.Time {
 		return time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 	}, time.Second)
+
 	payload := []byte(`{"pad":"` + repeatA(503) + `"}`)
+
 	ctx := b.Context()
 	b.ReportAllocs()
+
 	i := 0
 	for b.Loop() {
 		i++
@@ -43,9 +46,12 @@ func BenchmarkInsert(b *testing.B) {
 
 func BenchmarkInsertThenClaim(b *testing.B) {
 	st := persist.NewMemory(time.Now, 30*time.Second)
+
 	payload := []byte(`{"pad":"` + repeatA(503) + `"}`)
+
 	ctx := b.Context()
 	b.ReportAllocs()
+
 	i := 0
 	for b.Loop() {
 		i++
@@ -82,8 +88,11 @@ func TestHOP16DumpProfiles(t *testing.T) {
 	}
 
 	st := persist.NewMemory(time.Now, 30*time.Second)
+
 	payload := []byte(`{"pad":"` + repeatA(503) + `"}`)
+
 	ctx := t.Context()
+
 	const n = 256
 	for i := range n {
 		id := fmt.Sprintf("%024x", i+1)
@@ -146,6 +155,7 @@ func writeLookup(t *testing.T, dir, name, kind string) {
 
 func repeatA(n int) string {
 	buf := make([]byte, n)
+
 	for i := range buf {
 		buf[i] = 'a'
 	}

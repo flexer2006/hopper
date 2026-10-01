@@ -109,9 +109,7 @@ func ReplayFilter(id string) bson.D {
 	}
 }
 
-func PendingFilter() bson.D {
-	return bson.D{{Key: fDispatchStatus, Value: dispatch.StatusPending}}
-}
+func PendingFilter() bson.D { return bson.D{{Key: fDispatchStatus, Value: dispatch.StatusPending}} }
 
 func healingAgeClause(ageMs int64) bson.D {
 	return bson.D{{Key: "$or", Value: bson.A{

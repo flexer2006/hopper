@@ -2,6 +2,12 @@ package domain
 
 import "net/http"
 
+type Outcome string
+
+type FailureClass string
+
+type LocalKind uint8
+
 const (
 	OutcomeSuccess Outcome = "success"
 	OutcomeFailure Outcome = "failure"
@@ -10,6 +16,10 @@ const (
 	ClassTerminalHTTP      FailureClass = "terminal_http"
 	ClassNonRetryableLocal FailureClass = "non_retryable_local"
 
+	maxHTTPStatusCode = 599
+)
+
+const (
 	LocalUnspecified LocalKind = iota
 	LocalTransport
 	LocalDNSTimeout
@@ -18,15 +28,7 @@ const (
 	LocalSSRF
 	LocalInvalidURL
 	LocalMalformedBody
-
-	maxHTTPStatusCode = 599
 )
-
-type Outcome string
-
-type FailureClass string
-
-type LocalKind uint8
 
 func ClassifyHTTP(code int) (Outcome, FailureClass, error) {
 	if code < http.StatusContinue || code > maxHTTPStatusCode {

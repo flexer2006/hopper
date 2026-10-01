@@ -5,8 +5,6 @@ import (
 	"unicode/utf8"
 )
 
-const maxErrorRunes = 1024
-
 type Attempt struct {
 	At                                    time.Time
 	Error                                 string
@@ -14,6 +12,8 @@ type Attempt struct {
 	FailureClass                          FailureClass
 	Cycle, Number, DurationMS, StatusCode int
 }
+
+const maxErrorRunes = 1024
 
 func (a *Attempt) Validate() error {
 	if a == nil {

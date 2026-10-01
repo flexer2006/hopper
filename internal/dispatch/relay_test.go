@@ -19,20 +19,19 @@ import (
 )
 
 type recPub struct {
+	got [][2]string
 	err error
 	mu  sync.Mutex
-	got [][2]string
 }
 
 type pubHit struct {
-	queue string
-	id    string
-	n     int
+	queue, id string
+	n         int
 }
 
 type frozenClock struct {
-	mu sync.Mutex
 	ts time.Time
+	mu sync.Mutex
 }
 
 type bumpPub struct {
@@ -49,9 +48,7 @@ const (
 	testWorker = "worker-1"
 )
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 func (p *recPub) PublishJob(_ context.Context, queue, jobID string) error {
 	p.mu.Lock()
@@ -76,7 +73,7 @@ func (p *recPub) last() pubHit {
 }
 
 func newClock() *frozenClock {
-	return &frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
+	return new(frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)})
 }
 
 func (c *frozenClock) now() time.Time {

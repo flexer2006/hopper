@@ -15,30 +15,22 @@ import (
 )
 
 type stubJobs struct {
-	pending    []dispatch.Intent
-	healing    []dispatch.Intent
-	expired    []string
-	recovered  []string
-	mu         sync.Mutex
-	listErr    error
-	healList   error
-	leaseErr   error
-	recoverErr error
-	promoteErr error
-	healErr    error
-	markErr    error
-	recoverOK  bool
+	pending, healing                                                      []dispatch.Intent
+	expired, recovered                                                    []string
+	listErr, healList, leaseErr, recoverErr, promoteErr, healErr, markErr error
+	mu                                                                    sync.Mutex
+	recoverOK                                                             bool
 }
 
-func (s *stubJobs) MarkPublished(context.Context, string, int) error {
-	return s.markErr
-}
+func (s *stubJobs) MarkPublished(context.Context, string, int) error { return s.markErr }
 
 func (s *stubJobs) RecoverExpiredLease(_ context.Context, id string) (bool, error) {
 	s.mu.Lock()
+
 	s.recovered = append(s.recovered, id)
 	err := s.recoverErr
 	ok := s.recoverOK
+
 	s.mu.Unlock()
 
 	if err != nil {

@@ -51,14 +51,15 @@ func NewRelay(jobs Jobs, pub Publisher, cfg Config, log *zap.Logger) *Relay {
 		log = zap.NewNop()
 	}
 
-	rel := new(Relay)
-	rel.jobs = jobs
-	rel.pub = pub
-	rel.log = log
-	rel.interval = cfg.Interval
-	rel.healing = cfg.Healing
-	rel.lease = cfg.Lease
-	rel.limit = clampLimit(cfg.Limit)
+	rel := new(Relay{
+		jobs:     jobs,
+		pub:      pub,
+		log:      log,
+		interval: cfg.Interval,
+		healing:  cfg.Healing,
+		lease:    cfg.Lease,
+		limit:    clampLimit(cfg.Limit),
+	})
 
 	return rel
 }

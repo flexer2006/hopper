@@ -12,16 +12,14 @@ import (
 )
 
 type exchangeCall struct {
-	args                amqp.Table
-	name                string
-	kind                string
-	durable, autoDelete bool
-	internal, noWait    bool
+	name, kind                            string
+	args                                  amqp.Table
+	durable, autoDelete, internal, noWait bool
 }
 
 type queueCall struct {
-	args                                   amqp.Table
 	name                                   string
+	args                                   amqp.Table
 	durable, autoDelete, exclusive, noWait bool
 }
 
@@ -31,19 +29,12 @@ type bindCall struct {
 }
 
 type fakeTopo struct {
-	confirmErr  error
-	exchangeErr error
-	bindErr     error
-	qosErr      error
-	queueErr    error
-	exchanges   []exchangeCall
-	queues      []queueCall
-	binds       []bindCall
-	qosCount    int
-	qosSize     int
-	qosGlobal   bool
-	confirmed   bool
-	confirmWait bool
+	exchanges                                          []exchangeCall
+	queues                                             []queueCall
+	binds                                              []bindCall
+	confirmErr, exchangeErr, bindErr, qosErr, queueErr error
+	qosCount, qosSize                                  int
+	qosGlobal, confirmed, confirmWait                  bool
 }
 
 func (fake *fakeTopo) Confirm(noWait bool) error {
@@ -108,9 +99,7 @@ func (fake *fakeTopo) Qos(prefetchCount, prefetchSize int, global bool) error {
 	return fake.qosErr
 }
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 func TestDeclareClassicDurableTTLAndDLRK(t *testing.T) {
 	t.Parallel()

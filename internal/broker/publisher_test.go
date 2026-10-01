@@ -19,21 +19,19 @@ type stubWaiter struct {
 }
 
 type publishCall struct {
-	exchange string
-	key      string
-	msg      amqp.Publishing
+	msg           amqp.Publishing
+	exchange, key string
 }
 
 type confirmCall struct {
-	exchange, key        string
-	mandatory, immediate bool
-	seen                 bool
+	exchange, key              string
+	mandatory, immediate, seen bool
 }
 
 type fakeConfirmChannel struct {
 	call     confirmCall
-	deferred *amqp.DeferredConfirmation
 	err      error
+	deferred *amqp.DeferredConfirmation
 }
 
 func (stub stubWaiter) WaitContext(ctx context.Context) (bool, error) {
@@ -44,6 +42,7 @@ func (stub stubWaiter) WaitContext(ctx context.Context) (bool, error) {
 	select {
 	case <-ctx.Done():
 		return false, ctx.Err()
+
 	default:
 		return stub.acked, nil
 	}
@@ -317,17 +316,13 @@ func TestPublishMutexSerializesWait(t *testing.T) {
 
 	var waitGroup sync.WaitGroup
 
-	waitGroup.Add(workers)
-
 	for range workers {
-		go func() {
-			defer waitGroup.Done()
-
+		waitGroup.Go(func() {
 			err := pub.PublishJob(t.Context(), broker.QueueJobs, testJobID)
 			if err != nil {
 				t.Errorf("PublishJob: %v", err)
 			}
-		}()
+		})
 	}
 
 	waitGroup.Wait()

@@ -11,8 +11,7 @@ import (
 
 type fakeAck struct {
 	err         error
-	acks        int
-	nacks       int
+	acks, nacks int
 	lastRequeue bool
 }
 
@@ -29,9 +28,7 @@ func (fake *fakeAck) Nack(_ uint64, _, requeue bool) error {
 	return fake.err
 }
 
-func (fake *fakeAck) Reject(uint64, bool) error {
-	return nil
-}
+func (fake *fakeAck) Reject(uint64, bool) error { return nil }
 
 func TestAckAndNackDrop(t *testing.T) {
 	t.Parallel()

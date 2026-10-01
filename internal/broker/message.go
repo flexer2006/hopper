@@ -97,6 +97,7 @@ func MarshalGhostDLQ(jobID string) ([]byte, error) {
 
 func MarshalMalformedDLQ(raw []byte) ([]byte, error) {
 	sum := sha256.Sum256(raw)
+
 	size := len(raw)
 
 	body, err := json.Marshal(DLQMessage{
@@ -136,8 +137,10 @@ func validateDLQ(msg *DLQMessage) error {
 	switch msg.Reason {
 	case reasonMalformed:
 		err = validateMalformedDLQ(msg)
+
 	case reasonMissing:
 		err = validateGhostDLQ(msg)
+
 	default:
 		err = validateKnownDLQ(msg)
 	}

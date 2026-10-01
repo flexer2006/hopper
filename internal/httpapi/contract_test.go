@@ -68,6 +68,7 @@ func TestModuleProductDocsMatchSiblingWhenPresent(t *testing.T) {
 	for _, parts := range shippedProductDocs {
 		sib := filepath.Join(append([]string{sibRoot}, parts...)...)
 		mod := filepath.Join(append([]string{root, "docs"}, parts...)...)
+
 		want, err := os.ReadFile(sib)
 		if err != nil {
 			t.Fatal(err)
@@ -130,6 +131,7 @@ func asMap(t *testing.T, v any) map[string]any {
 	switch m := v.(type) {
 	case map[string]any:
 		return m
+
 	case map[any]any:
 		out := make(map[string]any, len(m))
 		for key, val := range m {
@@ -142,6 +144,7 @@ func asMap(t *testing.T, v any) map[string]any {
 		}
 
 		return out
+
 	default:
 		t.Fatalf("want map, got %T", v)
 
@@ -170,6 +173,7 @@ func resolveLocalRef(t *testing.T, doc map[string]any, ref string) map[string]an
 
 	parts := strings.Split(strings.TrimPrefix(ref, prefix), "/")
 	cur := child(t, doc, "components")
+
 	for _, part := range parts {
 		cur = child(t, cur, part)
 	}
@@ -202,8 +206,10 @@ func strSlice(t *testing.T, v any) []string {
 		}
 
 		return out
+
 	case []string:
 		return items
+
 	default:
 		t.Fatalf("want string slice, got %T", v)
 
@@ -321,8 +327,10 @@ func TestOpenAPIStructuralATCONTRACT01(t *testing.T) {
 	schemaFile := loadJSONMap(t, testutil.ProductDocs(t, "contracts", "error-response.schema.json"))
 	openCodes := strSlice(t, child(t, props, "code")["enum"])
 	fileCodes := strSlice(t, child(t, child(t, schemaFile, "properties"), "code")["enum"])
+
 	slices.Sort(openCodes)
 	slices.Sort(fileCodes)
+
 	if !slices.Equal(openCodes, fileCodes) {
 		t.Fatalf("ErrorResponse enum drift OpenAPI=%v schema=%v", openCodes, fileCodes)
 	}

@@ -72,14 +72,15 @@ type replayDTO struct {
 }
 
 type healthBody struct {
-	Checks map[string]string `json:"checks"`
 	Status string            `json:"status"`
+	Checks map[string]string `json:"checks"`
 }
 
 func publicJob(job query.Job) jobDTO { //nolint:gocritic // hugeParam: query.Job public view
 	attempts := make([]attemptDTO, 0, len(job.Attempts))
-	for i := range job.Attempts {
-		row := job.Attempts[i]
+
+	for _, attempt := range job.Attempts {
+		row := attempt
 		attempts = append(attempts, attemptDTO{
 			At:           row.At,
 			Error:        row.Error,
@@ -133,8 +134,9 @@ func publicReplays(rows []query.ReplayEvent) []replayDTO {
 	}
 
 	out := make([]replayDTO, 0, len(rows))
-	for i := range rows {
-		row := rows[i]
+
+	for _, r := range rows {
+		row := r
 		out = append(out, replayDTO{
 			At:        row.At,
 			By:        row.By,

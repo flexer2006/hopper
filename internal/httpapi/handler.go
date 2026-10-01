@@ -25,12 +25,12 @@ type Handler struct {
 
 type Options struct {
 	Checks                                                                                     []Checker
+	Token                                                                                      string
 	Log                                                                                        *zap.Logger
 	Now                                                                                        func() time.Time
 	Enqueue                                                                                    *enqueue.Service
 	Query                                                                                      *query.Service
 	Replay                                                                                     *replay.Service
-	Token                                                                                      string
 	MaxRequestBytes, MaxPayloadBytes, JSONMaxDepth, RateLimitRPM, RateLimitBurst, TrustXFFHops int
 }
 
@@ -77,18 +77,19 @@ func New(opts Options) http.Handler { //nolint:gocritic // hugeParam: Options is
 		burst = defaultRateBurst
 	}
 
-	handler := new(Handler)
-	handler.log = log
-	handler.enqueue = opts.Enqueue
-	handler.query = opts.Query
-	handler.replay = opts.Replay
-	handler.limit = newLimiter(rpm, burst, now)
-	handler.checks = opts.Checks
-	handler.token = []byte(opts.Token)
-	handler.maxBody = maxBody
-	handler.maxPayload = maxPayload
-	handler.maxDepth = maxDepth
-	handler.xffHops = opts.TrustXFFHops
+	handler := new(Handler{
+		log:        log,
+		enqueue:    opts.Enqueue,
+		query:      opts.Query,
+		replay:     opts.Replay,
+		limit:      newLimiter(rpm, burst, now),
+		checks:     opts.Checks,
+		token:      []byte(opts.Token),
+		maxBody:    maxBody,
+		maxPayload: maxPayload,
+		maxDepth:   maxDepth,
+		xffHops:    opts.TrustXFFHops,
+	})
 
 	mux := chi.NewRouter()
 	mux.Use(handler.recoverer)

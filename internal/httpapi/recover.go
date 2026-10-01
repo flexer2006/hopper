@@ -28,6 +28,4 @@ func (h *Handler) recoverer(next http.Handler) http.Handler {
 	})
 }
 
-func zapJobID(id string) zap.Field {
-	return zap.String("job_id", id)
-}
+func zapJobID(id string) zap.Field { return zap.String("job_id", id) }

@@ -26,8 +26,9 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	}
 
 	byName := make(map[string]Checker, len(h.checks))
-	for i := range h.checks {
-		item := h.checks[i]
+
+	for _, chck := range h.checks {
+		item := chck
 		if item == nil {
 			continue
 		}

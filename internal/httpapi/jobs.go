@@ -188,6 +188,7 @@ func (h *Handler) writeParseErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errBodyTooLarge), errors.Is(err, errPayloadTooLarge):
 		writeErr(w, http.StatusRequestEntityTooLarge, "payload too large", codePayloadTooLarge)
+
 	default:
 		writeErr(w, http.StatusBadRequest, "invalid request", codeValidation)
 	}
@@ -197,11 +198,14 @@ func (h *Handler) writeEnqueueErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, enqueue.ErrIdempotencyConflict):
 		writeErr(w, http.StatusConflict, "idempotency conflict", codeIdempotency)
+
 	case errors.Is(err, enqueue.ErrTooLarge):
 		writeErr(w, http.StatusRequestEntityTooLarge, "payload too large", codePayloadTooLarge)
+
 	case errors.Is(err, enqueue.ErrInvalid), errors.Is(err, domain.ErrInvalidTarget),
 		errors.Is(err, domain.ErrInvalidType), errors.Is(err, domain.ErrInvalidMaxAttempts):
 		writeErr(w, http.StatusBadRequest, "invalid request", codeValidation)
+
 	default:
 		writeErr(w, http.StatusServiceUnavailable, "enqueue failed", codeServiceUnavailable)
 	}
@@ -221,9 +225,11 @@ func (h *Handler) writeReplayErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		writeErr(w, http.StatusNotFound, "not found", codeNotFound)
+
 	case errors.Is(err, domain.ErrReplayNotDead), errors.Is(err, domain.ErrReplayCap),
 		errors.Is(err, replay.ErrInvalid):
 		writeErr(w, http.StatusConflict, "conflict", codeConflict)
+
 	default:
 		writeErr(w, http.StatusServiceUnavailable, "replay failed", codeServiceUnavailable)
 	}
@@ -234,8 +240,7 @@ func validJobID(id string) bool {
 		return false
 	}
 
-	for i := range len(id) {
-		c := id[i]
+	for _, c := range id {
 		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}

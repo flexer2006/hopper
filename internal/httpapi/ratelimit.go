@@ -29,12 +29,14 @@ const (
 )
 
 func newLimiter(rpm, burst int, now func() time.Time) *limiter {
-	lim := new(limiter)
-	lim.now = now
-	lim.items = make(map[string]*bucket)
-	lim.rpm = rpm
-	lim.burst = burst
-	lim.maxKeys = rateMaxKeys
+	lim := new(limiter{
+		now:     now,
+		items:   make(map[string]*bucket),
+		rpm:     rpm,
+		burst:   burst,
+		maxKeys: rateMaxKeys,
+		mu:      sync.Mutex{},
+	})
 
 	return lim
 }

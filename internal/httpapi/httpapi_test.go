@@ -34,8 +34,8 @@ type recBroker struct {
 }
 
 type frozenClock struct {
-	mu sync.Mutex
 	ts time.Time
+	mu sync.Mutex
 }
 
 type errBody struct {
@@ -62,9 +62,7 @@ type staticCheck struct {
 	name string
 }
 
-type errReplayStore struct {
-	err error
-}
+type errReplayStore struct{ err error }
 
 const (
 	testTarget = "https://example.invalid/webhook"
@@ -72,9 +70,7 @@ const (
 	idemKey    = "order-1"
 )
 
-func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
-}
+func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 func (p *recBroker) PublishJob(_ context.Context, _, _ string) error {
 	p.mu.Lock()
@@ -115,9 +111,10 @@ func newFixture(tb testing.TB) apiFixture {
 func newFixtureLog(tb testing.TB, log *zap.Logger) apiFixture {
 	tb.Helper()
 
-	clk := &frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
+	clk := new(frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)})
 	st := persist.NewMemory(clk.now, 30*time.Second)
 	broker := new(recBroker)
+
 	rel := dispatch.NewRelay(st, broker, dispatch.Config{
 		Interval: time.Hour,
 		Healing:  30 * time.Second,
@@ -197,6 +194,7 @@ func claimDead(t *testing.T, fx apiFixture, id string) {
 	t.Helper()
 
 	out := claimJob(t, fx, id)
+
 	err := fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
 		ID:           id,
 		FenceToken:   out.FenceToken,
@@ -240,6 +238,7 @@ func TestCreateJobAccepted(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
 	defer closeBody(t, res)
 
@@ -273,6 +272,7 @@ func TestCreateJobIdempotentRetry(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	first := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
 	defer closeBody(t, first)
 
@@ -310,6 +310,7 @@ func TestCreateJobIdempotencyConflict(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	first := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
 	defer func() {
 		err := first.Body.Close()
@@ -348,6 +349,7 @@ func TestCreateJobMissingAuth(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs", "", idemKey, createJSON)
 	got := decodeErr(t, res)
 	if res.StatusCode != http.StatusUnauthorized || got.Code != "unauthorized" {
@@ -359,6 +361,7 @@ func TestCreateJobWrongToken(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs", strings.Repeat("b", 32), idemKey, createJSON)
 	got := decodeErr(t, res)
 	if res.StatusCode != http.StatusUnauthorized || got.Code != "unauthorized" {
@@ -370,6 +373,7 @@ func TestCreateJobMissingIdempotencyKey(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), "", createJSON)
 	got := decodeErr(t, res)
 	if res.StatusCode != http.StatusBadRequest || got.Code != "validation_failed" {
@@ -381,6 +385,7 @@ func TestCreateJobIdempotencyKeyTooLong(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	key := strings.Repeat("k", 257)
 	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), key, createJSON)
 	got := decodeErr(t, res)
@@ -397,6 +402,7 @@ func TestCreateJobPendingRetryDoesNotRepublishJobs(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	first := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
 	defer closeBody(t, first)
 
@@ -443,6 +449,7 @@ func TestCreateJobLiteralIPDenied(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	body := `{"type":"http_post","target":"http://127.0.0.1/hook","payload":{}}`
 	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, body)
 	got := decodeErr(t, res)
@@ -455,6 +462,7 @@ func TestCreateJobUnknownField(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	body := `{"type":"http_post","target":"https://example.invalid/webhook","payload":{},"fence_token":"x"}`
 	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, body)
 	got := decodeErr(t, res)
@@ -467,6 +475,7 @@ func TestCreateJobTooLarge(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	body := `{"type":"http_post","target":"https://example.invalid/webhook","payload":{"n":"` +
 		strings.Repeat("x", 600) + `"}}`
 	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, body)
@@ -480,6 +489,7 @@ func TestCreateJobTooDeep(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	nested := strings.Repeat(`{"k":`, 10) + "1" + strings.Repeat("}", 10)
 	body := `{"type":"http_post","target":"https://example.invalid/webhook","payload":` + nested + `}`
 	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, body)
@@ -493,6 +503,7 @@ func TestGetAndListDead(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
 	var body idBody
 
@@ -555,6 +566,7 @@ func TestGetJobNotFoundAndBadID(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	missing := doReq(t, fx.h, http.MethodGet, "/v1/jobs/aaaaaaaaaaaaaaaaaaaaaaaa", platform.ValidToken(), "", "")
 	got := decodeErr(t, missing)
 	if missing.StatusCode != http.StatusNotFound || got.Code != "not_found" {
@@ -572,6 +584,7 @@ func TestReplayDeadAndConflict(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
 	var body idBody
 
@@ -601,6 +614,7 @@ func TestReplayNotFound404(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs/aaaaaaaaaaaaaaaaaaaaaaaa/replay", platform.ValidToken(), "", "")
 	got := decodeErr(t, res)
 	if res.StatusCode != http.StatusNotFound || got.Code != "not_found" {
@@ -640,6 +654,7 @@ func TestReplayConfirmFail503(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
 	var body idBody
 
@@ -664,6 +679,7 @@ func TestReplayCapConflict409(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
 	var body idBody
 
@@ -705,6 +721,7 @@ func TestGetJobIncludesReplayHistory(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
 	var body idBody
 
@@ -765,6 +782,7 @@ func TestHealthzUnauthenticated(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	res := doReq(t, fx.h, http.MethodGet, "/healthz", "", "", "")
 	defer closeBody(t, res)
 
@@ -837,13 +855,15 @@ func TestHealthzPartialDown503(t *testing.T) {
 func TestCreateJobPayloadTooLargeUnderBodyCap(t *testing.T) {
 	t.Parallel()
 
-	clk := &frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
+	clk := new(frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)})
 	st := persist.NewMemory(clk.now, 30*time.Second)
+
 	rel := dispatch.NewRelay(st, new(recBroker), dispatch.Config{
 		Interval: time.Hour,
 		Healing:  30 * time.Second,
 		Limit:    8,
 	}, nil)
+
 	h := httpapi.New(httpapi.Options{
 		Now:             clk.now,
 		Enqueue:         enqueue.NewService(st, rel),
@@ -870,11 +890,13 @@ func TestCreateJobBodyTooLarge413(t *testing.T) {
 
 	clk := &frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
 	st := persist.NewMemory(clk.now, 30*time.Second)
+
 	rel := dispatch.NewRelay(st, new(recBroker), dispatch.Config{
 		Interval: time.Hour,
 		Healing:  30 * time.Second,
 		Limit:    8,
 	}, nil)
+
 	h := httpapi.New(httpapi.Options{
 		Now:             clk.now,
 		Enqueue:         enqueue.NewService(st, rel),
@@ -896,7 +918,7 @@ func TestCreateJobBodyTooLarge413(t *testing.T) {
 func TestRateLimitBeforeAuth(t *testing.T) {
 	t.Parallel()
 
-	clk := &frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
+	clk := new(frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)})
 	h := httpapi.New(httpapi.Options{
 		Now:            clk.now,
 		Token:          platform.ValidToken(),
@@ -921,7 +943,7 @@ func TestRateLimitBeforeAuth(t *testing.T) {
 func TestXFFIgnoredWhenHopsZero(t *testing.T) {
 	t.Parallel()
 
-	clk := &frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
+	clk := new(frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)})
 	h := httpapi.New(httpapi.Options{
 		Now:            clk.now,
 		Token:          platform.ValidToken(),
@@ -951,6 +973,7 @@ func TestBearerSchemeCaseInsensitive(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/jobs", strings.NewReader(createJSON))
 	req.Header.Set("Authorization", "bearer "+platform.ValidToken())
 	req.Header.Set("Idempotency-Key", idemKey)

@@ -52,6 +52,7 @@ func jsonTooDeep(raw []byte, maxDepth int) bool {
 			}
 
 			i = next
+
 		case '{', '[':
 			depth++
 			if depth > maxDepth {
@@ -59,6 +60,7 @@ func jsonTooDeep(raw []byte, maxDepth int) bool {
 			}
 
 			i++
+
 		case '}', ']':
 			depth--
 			if depth < 0 {
@@ -66,6 +68,7 @@ func jsonTooDeep(raw []byte, maxDepth int) bool {
 			}
 
 			i++
+
 		default:
 			i++
 		}

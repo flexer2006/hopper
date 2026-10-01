@@ -20,8 +20,10 @@ import (
 
 func BenchmarkCreateJob(b *testing.B) {
 	clk := &frozenClock{ts: time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)}
+
 	st := persist.NewMemory(clk.now, 30*time.Second)
 	broker := new(recBroker)
+
 	rel := dispatch.NewRelay(st, broker, dispatch.Config{
 		Interval: time.Hour,
 		Healing:  30 * time.Second,

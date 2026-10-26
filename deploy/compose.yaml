@@ -92,7 +92,7 @@ services:
       context: ..
       dockerfile: deploy/go.Dockerfile
       args:
-        GO_VERSION: "1.27.1"
+        GO_VERSION: "1.27.3"
     command: ["api"]
     mem_limit: 128m
     memswap_limit: 128m

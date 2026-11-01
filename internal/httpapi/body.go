@@ -35,7 +35,11 @@ func readCapped(body io.Reader, limit int) ([]byte, error) {
 func requestHash(raw []byte) string {
 	sum := sha256.Sum256(raw)
 
-	return hex.EncodeToString(sum[:])
+	var hexBuf [sha256.Size * 2]byte
+
+	hex.Encode(hexBuf[:], sum[:])
+
+	return string(hexBuf[:])
 }
 
 func jsonTooDeep(raw []byte, maxDepth int) bool {

@@ -11,7 +11,14 @@ const bearerScheme = "bearer"
 
 func (h *Handler) bearer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got, ok := parseBearer(r.Header.Get("Authorization"))
+		vals := r.Header.Values("Authorization")
+		if len(vals) != 1 {
+			writeErr(w, http.StatusUnauthorized, "unauthorized", codeUnauthorized)
+
+			return
+		}
+
+		got, ok := parseBearer(vals[0])
 		if !ok || !tokenEqual(h.token, got) {
 			writeErr(w, http.StatusUnauthorized, "unauthorized", codeUnauthorized)
 

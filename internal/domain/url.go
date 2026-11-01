@@ -19,7 +19,7 @@ func ParseTarget(raw string) (*url.URL, error) {
 		return nil, fmt.Errorf("%w: empty", ErrInvalidTarget)
 	}
 
-	if utf8.RuneCountInString(raw) > MaxTargetRunes {
+	if len(raw) > MaxTargetRunes && utf8.RuneCountInString(raw) > MaxTargetRunes {
 		return nil, fmt.Errorf("%w: length", ErrInvalidTarget)
 	}
 

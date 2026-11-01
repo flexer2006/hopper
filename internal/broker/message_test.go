@@ -59,6 +59,16 @@ func TestParseEnqueueRejectsUnknownAndInvalid(t *testing.T) {
 			body: `{"job_id":"aaaaaaaaaaaaaaaaaaaaaaaa","cycle":0}`,
 			want: broker.ErrInvalidEnqueue,
 		},
+		{
+			name: "duplicate member name",
+			body: `{"job_id":"aaaaaaaaaaaaaaaaaaaaaaaa","job_id":"bbbbbbbbbbbbbbbbbbbbbbbb"}`,
+			want: broker.ErrInvalidEnqueue,
+		},
+		{
+			name: "invalid utf8",
+			body: "{\"job_id\":\"\xff\"}",
+			want: broker.ErrInvalidEnqueue,
+		},
 		{name: "empty", body: ``, want: broker.ErrInvalidEnqueue},
 		{name: "array", body: `[]`, want: broker.ErrInvalidEnqueue},
 		{name: "trailing", body: `{"job_id":"aaaaaaaaaaaaaaaaaaaaaaaa"}{}`, want: broker.ErrInvalidEnqueue},
@@ -168,6 +178,14 @@ func TestParseDLQRejectsCrossShape(t *testing.T) {
 		{
 			name: "unknown field",
 			body: `{"job_id":"aaaaaaaaaaaaaaaaaaaaaaaa","cycle":1,"reason":"terminal_http","payload":"x"}`,
+		},
+		{
+			name: "duplicate member name",
+			body: `{"job_id":"aaaaaaaaaaaaaaaaaaaaaaaa","job_id":"bbbbbbbbbbbbbbbbbbbbbbbb","cycle":1,"reason":"terminal_http"}`,
+		},
+		{
+			name: "invalid utf8",
+			body: "{\"job_id\":\"aaaaaaaaaaaaaaaaaaaaaaaa\",\"cycle\":1,\"reason\":\"\xff\"}",
 		},
 		{name: "negative cycle", body: `{"job_id":"aaaaaaaaaaaaaaaaaaaaaaaa","cycle":-1,"reason":"operator_manual"}`},
 	}

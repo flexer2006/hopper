@@ -4,22 +4,48 @@ vars:
   TIMEOUT: 5m
   TEST_FLAGS: -race -count=1 -shuffle=on -covermode=atomic
 
+env:
+  GOTMPDIR: '{{default (printf "%s/.cache/go-tmp" .ROOT_DIR) .GOTMPDIR}}'
+
 tasks:
   chup:
     cmds:
+      - mkdir -p "$GOTMPDIR"
       - go get -u ./...
       - go mod tidy
       - go mod verify
       - go vet ./...
       - go fix ./...
-      - golangci-lint run --timeout={{.TIMEOUT}} ./...
-      - go-arch-lint check
+      - PATH="$(go env GOPATH)/bin:$PATH" golangci-lint run --timeout={{.TIMEOUT}} ./...
+      - PATH="$(go env GOPATH)/bin:$PATH" go-arch-lint check
+
+  deps:
+    cmds:
+      - mkdir -p "$GOTMPDIR"
+      - go mod tidy
+
+  fmt-check:
+    cmds:
+      - test -z "$(gofmt -l .)"
+
+  vet:
+    cmds:
+      - mkdir -p "$GOTMPDIR"
+      - go vet ./...
+      - go vet -tags=integration ./...
+
+  lint:
+    cmds:
+      - mkdir -p "$GOTMPDIR"
+      - PATH="$(go env GOPATH)/bin:$PATH" golangci-lint run --timeout={{.TIMEOUT}} ./...
+      - PATH="$(go env GOPATH)/bin:$PATH" go-arch-lint check
 
   test:
     silent: true
     cmds:
       - |
         set -o pipefail
+        mkdir -p "$GOTMPDIR"
         go test ./... {{.TEST_FLAGS}} -timeout={{.TIMEOUT}} -coverprofile=coverage.out 2>&1 \
           | awk '/^ok |^FAIL / {
               pkg = $2; sub(/.*\//, "", pkg)
@@ -29,3 +55,28 @@ tasks:
         go tool cover -func=coverage.out \
           | awk '/^total:/ { printf "  ----\n  %5s  total\n", $3; exit }'
         go clean -testcache
+
+  test-race:
+    cmds:
+      - mkdir -p "$GOTMPDIR"
+      - go test -race -count=1 ./...
+
+  test-integration:
+    cmds:
+      - mkdir -p "$GOTMPDIR"
+      - go test -tags=integration ./...
+
+  bench:
+    cmds:
+      - mkdir -p "$GOTMPDIR"
+      - go test -run=^$ -bench=. -benchmem ./...
+
+  cover:
+    cmds:
+      - mkdir -p "$GOTMPDIR"
+      - go test -coverprofile=coverage.out ./...
+
+  cover-func:
+    cmds:
+      - go tool cover -func=coverage.out
+

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.uber.org/fx"
@@ -48,26 +49,17 @@ func startHTTP(in httpIn) { //nolint:gocritic // hugeParam: fx.In composition
 
 	handler := httpapi.New(httpOptions(in))
 
-	srv := new(http.Server)
-	srv.Addr = in.Cfg.HTTPAddr
-	srv.Handler = handler
-	srv.ReadTimeout = readTimeout
-	srv.ReadHeaderTimeout = readHeaderTimeout
-	srv.WriteTimeout = writeTimeout
-	srv.IdleTimeout = idleTimeout
-	srv.MaxHeaderBytes = maxHeaderBytes
-	srv.MaxHeaderValueCount = maxHeaderValues
-	srv.ErrorLog = log.New(io.Discard, "", 0)
-
-	var stopServe context.CancelFunc
+	var (
+		srv       *http.Server
+		stopServe context.CancelFunc
+		wg        sync.WaitGroup
+	)
 
 	in.LC.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			serveCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 			stopServe = cancel
-			srv.BaseContext = func(net.Listener) context.Context {
-				return serveCtx
-			}
+			srv = newHTTPServer(serveCtx, in.Cfg.HTTPAddr, handler)
 
 			var lc net.ListenConfig
 
@@ -78,12 +70,14 @@ func startHTTP(in httpIn) { //nolint:gocritic // hugeParam: fx.In composition
 				return fmt.Errorf("http listen: %w", err)
 			}
 
-			go func() {
-				serveErr := srv.Serve(ln)
+			activeSrv := srv
+
+			wg.Go(func() {
+				serveErr := activeSrv.Serve(ln)
 				if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 					in.Log.Error("http server", zap.Error(serveErr))
 				}
-			}()
+			})
 
 			return nil
 		},
@@ -91,19 +85,66 @@ func startHTTP(in httpIn) { //nolint:gocritic // hugeParam: fx.In composition
 			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), in.Cfg.APIShutdownTimeout)
 			defer cancel()
 
-			err := srv.Shutdown(stopCtx)
+			var err error
 
-			if stopServe != nil {
-				stopServe()
+			if srv != nil {
+				activeSrv := srv
+				srv = nil
+				err = activeSrv.Shutdown(stopCtx)
 			}
 
-			if err != nil {
-				return fmt.Errorf("http shutdown: %w", err)
+			if stopServe != nil {
+				stopFn := stopServe
+				stopServe = nil
+
+				stopFn()
+			}
+
+			waitErr := waitDone(stopCtx, &wg)
+
+			joinErr := errors.Join(err, waitErr)
+			if joinErr != nil {
+				return fmt.Errorf("http shutdown: %w", joinErr)
 			}
 
 			return nil
 		},
 	})
+}
+
+func newHTTPServer(baseCtx context.Context, addr string, handler http.Handler) *http.Server {
+	srv := new(http.Server)
+	srv.Addr = addr
+	srv.Handler = handler
+	srv.ReadTimeout = readTimeout
+	srv.ReadHeaderTimeout = readHeaderTimeout
+	srv.WriteTimeout = writeTimeout
+	srv.IdleTimeout = idleTimeout
+	srv.MaxHeaderBytes = maxHeaderBytes
+	srv.MaxHeaderValueCount = maxHeaderValues
+	srv.ErrorLog = log.New(io.Discard, "", 0)
+	srv.BaseContext = func(net.Listener) context.Context {
+		return baseCtx
+	}
+
+	return srv
+}
+
+func waitDone(ctx context.Context, wg *sync.WaitGroup) error {
+	done := make(chan struct{})
+
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func httpOptions(in httpIn) httpapi.Options { //nolint:gocritic // hugeParam: fx.In composition

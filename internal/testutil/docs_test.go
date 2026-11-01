@@ -5,8 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.uber.org/goleak"
+
 	"github.com/flexer2006/hopper/internal/testutil"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestModuleRootFindsGoMod(t *testing.T) {
 	t.Parallel()

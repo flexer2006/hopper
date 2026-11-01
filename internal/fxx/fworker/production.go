@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/fx"
@@ -13,6 +12,7 @@ import (
 	"github.com/flexer2006/hopper/internal/broker"
 	"github.com/flexer2006/hopper/internal/deliver"
 	"github.com/flexer2006/hopper/internal/dispatch"
+	"github.com/flexer2006/hopper/internal/fxx/fboot"
 	"github.com/flexer2006/hopper/internal/httpapi"
 	"github.com/flexer2006/hopper/internal/persist"
 	"github.com/flexer2006/hopper/internal/platform"
@@ -38,8 +38,6 @@ type amqpDelivery struct{ delivery amqp.Delivery }
 type mongoChecker struct{ store *persist.Store }
 
 type amqpChecker struct{ resources *workerResources }
-
-const productionConfirmTimeout = 5 * time.Second
 
 var errDeliveriesClosed = errors.New("amqp source: deliveries closed")
 
@@ -72,7 +70,7 @@ func (d *amqpDelivery) Ack() error { return broker.Ack(&d.delivery) }
 
 func Production() fx.Option { //nolint:ireturn // Fx composition contract.
 	return fx.Options(
-		fx.Invoke(requireInfrastructure),
+		fx.Invoke(fboot.RequireInfrastructure),
 		fx.Provide(openStore),
 		fx.Provide(openBroker),
 		bindPorts(),
@@ -116,39 +114,6 @@ func mongoOptions(cfg *platform.Config) persist.Options {
 	}
 }
 
-func requireInfrastructure(cfg *platform.Config) error {
-	if cfg == nil {
-		return fmt.Errorf("%w: missing config", platform.ErrConfig)
-	}
-
-	cfg.FillRuntimeDefaults()
-
-	err := cfg.ValidateInfrastructure()
-	if err != nil {
-		return err
-	}
-
-	if !persist.URIHasReplicaSet(cfg.MongoURI) {
-		return fmt.Errorf("mongo_uri: %w", persist.ErrStandalone)
-	}
-
-	err = broker.ValidateURI(cfg.AMQPURI)
-	if err != nil {
-		return fmt.Errorf("amqp_uri: %w", err)
-	}
-
-	if cfg.ExchangeDelay != "" && cfg.ExchangeDelay != broker.ExchangeDelayDLX {
-		return fmt.Errorf("exchange_delay must be %s: %w", broker.ExchangeDelayDLX, platform.ErrConfig)
-	}
-
-	err = persist.CheckLeaseBudget(cfg.ClaimLease, cfg.HTTPTimeout, cfg.MongoOutcomeTimeout, cfg.PublishConfirmTimeout)
-	if err != nil {
-		return fmt.Errorf("fr-46 lease budget: %w", err)
-	}
-
-	return nil
-}
-
 func openStore(lc fx.Lifecycle, cfg *platform.Config) *persist.Store {
 	store := new(persist.Store)
 
@@ -160,12 +125,21 @@ func openStore(lc fx.Lifecycle, cfg *platform.Config) *persist.Store {
 
 func openBroker(lc fx.Lifecycle, cfg *platform.Config) *workerResources {
 	resources := newWorkerResources()
-	if cfg != nil && cfg.PublishConfirmTimeout > 0 {
-		resources.pub = broker.LazyPublisher(resources.channel, cfg.PublishConfirmTimeout)
+
+	if cfg != nil {
+		cfg.FillRuntimeDefaults()
+
+		if cfg.PublishConfirmTimeout > 0 {
+			resources.pub = broker.LazyPublisher(resources.channel, cfg.PublishConfirmTimeout)
+		}
 	}
 
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
+			if cfg == nil {
+				return fmt.Errorf("%w: missing config", platform.ErrConfig)
+			}
+
 			conn, err := broker.Open(cfg.AMQPURI)
 			if err != nil {
 				return fmt.Errorf("amqp open: %w", err)
@@ -192,7 +166,7 @@ func openBroker(lc fx.Lifecycle, cfg *platform.Config) *workerResources {
 
 func newWorkerResources() *workerResources {
 	resources := new(workerResources)
-	resources.pub = broker.LazyPublisher(resources.channel, productionConfirmTimeout)
+	resources.pub = broker.LazyPublisher(resources.channel, platform.DefaultPublishConfirmTimeout)
 
 	return resources
 }

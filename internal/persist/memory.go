@@ -1,8 +1,9 @@
 package persist
 
 import (
+	"cmp"
 	"context"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -280,12 +281,12 @@ func (m *mem) listDead(_ context.Context, limit int) ([]jobDoc, error) {
 		}
 	}
 
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
-			return out[i].ID > out[j].ID
+	slices.SortFunc(out, func(a, b jobDoc) int {
+		if c := b.UpdatedAt.Compare(a.UpdatedAt); c != 0 {
+			return c
 		}
 
-		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		return cmp.Compare(b.ID, a.ID)
 	})
 
 	if limit > 0 && len(out) > limit {
@@ -344,8 +345,8 @@ func dueRetryPending(doc *jobDoc, now time.Time, generation int) bool {
 }
 
 func capSorted(docs []jobDoc, limit int) []jobDoc {
-	sort.Slice(docs, func(i, j int) bool {
-		return docs[i].ID < docs[j].ID
+	slices.SortFunc(docs, func(a, b jobDoc) int {
+		return cmp.Compare(a.ID, b.ID)
 	})
 
 	if limit > 0 && len(docs) > limit {

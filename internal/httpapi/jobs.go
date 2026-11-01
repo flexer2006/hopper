@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"net/http"
@@ -14,14 +15,15 @@ import (
 )
 
 func (h *Handler) createJob(w http.ResponseWriter, r *http.Request) {
-	key := r.Header.Get("Idempotency-Key")
-	if key == "" {
+	keys := r.Header.Values("Idempotency-Key")
+	if len(keys) == 0 || keys[0] == "" {
 		writeErr(w, http.StatusBadRequest, "missing Idempotency-Key", codeValidation)
 
 		return
 	}
 
-	if len(key) > maxIdempotencyKey {
+	key := keys[0]
+	if len(keys) > 1 || len(key) > maxIdempotencyKey {
 		writeErr(w, http.StatusBadRequest, "invalid Idempotency-Key", codeValidation)
 
 		return
@@ -159,7 +161,14 @@ func (h *Handler) parseCreate(r *http.Request) ([]byte, enqueue.Record, error) {
 
 	var req createRequest
 
-	err = jsonv2.Unmarshal(raw, &req, json.DefaultOptionsV1(), jsonv2.RejectUnknownMembers(true))
+	err = jsonv2.Unmarshal(
+		raw,
+		&req,
+		json.DefaultOptionsV1(),
+		jsonv2.RejectUnknownMembers(true),
+		jsontext.AllowDuplicateNames(false),
+		jsontext.AllowInvalidUTF8(false),
+	)
 	if err != nil {
 		return nil, enqueue.Record{}, errJSONSyntax
 	}
@@ -240,8 +249,9 @@ func validJobID(id string) bool {
 		return false
 	}
 
-	for _, c := range id {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+	for i := range len(id) {
+		ch := id[i]
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
 			return false
 		}
 	}

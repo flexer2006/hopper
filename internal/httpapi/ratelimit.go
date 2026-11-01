@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -126,7 +127,7 @@ func (rl *limiter) evict(now time.Time) {
 
 func clientIP(r *http.Request, hops int) string {
 	if hops > 0 {
-		if ip := xffHop(r.Header.Get("X-Forwarded-For"), hops); ip != "" {
+		if ip := xffHop(xffHeader(r.Header), hops); ip != "" {
 			return ip
 		}
 	}
@@ -139,17 +140,67 @@ func clientIP(r *http.Request, hops int) string {
 	return host
 }
 
+func xffHeader(header http.Header) string {
+	vals := header.Values("X-Forwarded-For")
+	switch len(vals) {
+	case 0:
+		return ""
+
+	case 1:
+		return strings.TrimSpace(vals[0])
+
+	default:
+		var buf strings.Builder
+
+		for _, raw := range vals {
+			val := strings.TrimSpace(raw)
+			if val == "" {
+				continue
+			}
+
+			if buf.Len() > 0 {
+				buf.WriteString(", ")
+			}
+
+			buf.WriteString(val)
+		}
+
+		return buf.String()
+	}
+}
+
 func xffHop(header string, hops int) string {
 	if header == "" || hops < 1 {
 		return ""
 	}
 
-	parts := strings.Split(header, ",")
+	rem := header
+	seen := 0
 
-	idx := len(parts) - hops
-	if idx < 0 || idx >= len(parts) {
-		return ""
+	for rem != "" {
+		before, after, found := strings.CutLast(rem, ",")
+		seg := strings.TrimSpace(after)
+		rem = before
+
+		if !found {
+			seg = strings.TrimSpace(before)
+			rem = ""
+		}
+
+		if seg == "" {
+			continue
+		}
+
+		seen++
+		if seen == hops {
+			addr, err := netip.ParseAddr(seg)
+			if err != nil || addr.Zone() != "" {
+				return ""
+			}
+
+			return addr.Unmap().String()
+		}
 	}
 
-	return strings.TrimSpace(parts[idx])
+	return ""
 }

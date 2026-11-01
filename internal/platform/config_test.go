@@ -13,7 +13,12 @@ import (
 	"github.com/flexer2006/hopper/internal/testutil"
 )
 
-func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(
+		m,
+		goleak.IgnoreTopFunction("github.com/flexer2006/hopper/internal/platform_test.leakUnreachableGoroutine"),
+	)
+}
 
 func TestParseMode(t *testing.T) {
 	t.Parallel()
@@ -617,5 +622,32 @@ func TestLoadFileAppliesWorkerKnobs(t *testing.T) {
 
 	if cfg.AttemptBudget() != 12*time.Second+6*time.Second+7*time.Second+5*time.Second {
 		t.Fatalf("AttemptBudget() = %s", cfg.AttemptBudget())
+	}
+}
+
+func TestFillRuntimeDefaults(t *testing.T) {
+	t.Parallel()
+
+	var nilCfg *platform.Config
+	nilCfg.FillRuntimeDefaults()
+
+	cfg := new(platform.Config)
+	cfg.FillRuntimeDefaults()
+
+	if cfg.HTTPTimeout != platform.DefaultHTTPTimeout ||
+		cfg.MongoOutcomeTimeout != platform.DefaultMongoOutcomeTimeout ||
+		cfg.PublishConfirmTimeout != platform.DefaultPublishConfirmTimeout ||
+		cfg.ClaimLease != platform.DefaultClaimLease ||
+		cfg.MaxResponseBytes != platform.DefaultMaxResponseBytes ||
+		cfg.ReplayMax != platform.DefaultReplayMax ||
+		cfg.QueueJobs == "" || cfg.QueueDLQ == "" {
+		t.Fatalf("FillRuntimeDefaults() = %+v", cfg)
+	}
+
+	cfg.PublishConfirmTimeout = 9 * time.Second
+	cfg.FillRuntimeDefaults()
+
+	if cfg.PublishConfirmTimeout != 9*time.Second {
+		t.Fatalf("FillRuntimeDefaults() overwrote custom PublishConfirmTimeout = %s", cfg.PublishConfirmTimeout)
 	}
 }

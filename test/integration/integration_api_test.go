@@ -261,7 +261,7 @@ func TestLiveATRELAY01PendingPublished(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
-	err = waitNotPending(ctx, store, id)
+	err := waitNotPending(ctx, store, id)
 	if err != nil {
 		t.Fatal(err)
 	}

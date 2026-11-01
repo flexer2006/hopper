@@ -686,6 +686,20 @@ func TestInsertMoreValidation(t *testing.T) {
 	if !errors.Is(err, persist.ErrPayload) {
 		t.Fatalf("truncated json err = %v", err)
 	}
+
+	rec = testRecord("cccccccccccccccccccccccc", "idem-2", 5)
+	rec.Payload = []byte(`{"n":1,"n":2}`)
+	err = st.Insert(t.Context(), rec)
+	if !errors.Is(err, persist.ErrPayload) {
+		t.Fatalf("duplicate json member err = %v, want ErrPayload", err)
+	}
+
+	rec = testRecord("cccccccccccccccccccccccc", "idem-2", 5)
+	rec.Payload = []byte("{\"s\":\"\xff\"}")
+	err = st.Insert(t.Context(), rec)
+	if !errors.Is(err, persist.ErrPayload) {
+		t.Fatalf("invalid utf8 json payload err = %v, want ErrPayload", err)
+	}
 }
 
 func TestClaimExpiredLeaseSkip(t *testing.T) {
@@ -946,5 +960,43 @@ func TestDeadOutcomeForcesDLQQueue(t *testing.T) {
 	if err != nil || existing.Kind != "dlq" || existing.Queue != domain.QueueDLQ ||
 		existing.DispatchStatus != "pending" {
 		t.Fatalf("dead dispatch = %+v err=%v", existing, err)
+	}
+}
+
+func TestHotStructLayoutZeroPadding(t *testing.T) {
+	t.Parallel()
+
+	types := []struct {
+		typ      reflect.Type
+		wantSize uintptr
+	}{
+		{typ: reflect.TypeFor[domain.Job](), wantSize: 128},
+		{typ: reflect.TypeFor[domain.Attempt](), wantSize: 104},
+		{typ: reflect.TypeFor[enqueue.Record](), wantSize: 112},
+		{typ: reflect.TypeFor[query.Job](), wantSize: 216},
+		{typ: reflect.TypeFor[deliver.ClaimOut](), wantSize: 136},
+		{typ: reflect.TypeFor[deliver.OutcomeIn](), wantSize: 112},
+	}
+
+	for _, tc := range types {
+		var sumFields uintptr
+
+		for field := range tc.typ.Fields() {
+			sumFields += field.Type.Size()
+		}
+
+		if tc.typ.Size() != sumFields {
+			t.Fatalf(
+				"%s has %d bytes of padding (size=%d, sumFields=%d)",
+				tc.typ,
+				tc.typ.Size()-sumFields,
+				tc.typ.Size(),
+				sumFields,
+			)
+		}
+
+		if reflect.TypeFor[uintptr]().Size() == 8 && tc.typ.Size() != tc.wantSize {
+			t.Fatalf("%s size = %d, want %d on 64-bit", tc.typ, tc.typ.Size(), tc.wantSize)
+		}
 	}
 }

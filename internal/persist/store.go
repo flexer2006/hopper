@@ -301,12 +301,17 @@ func runningClaim(doc *jobDoc) deliver.ClaimOut {
 }
 
 func randomFence() (string, error) {
-	buf := make([]byte, fenceBytes)
+	var (
+		buf    [fenceBytes]byte
+		hexBuf [fenceBytes * 2]byte
+	)
 
-	_, err := rand.Read(buf)
+	_, err := rand.Read(buf[:])
 	if err != nil {
 		return "", fmt.Errorf("fence token: %w", err)
 	}
 
-	return hex.EncodeToString(buf), nil
+	hex.Encode(hexBuf[:], buf[:])
+
+	return string(hexBuf[:]), nil
 }

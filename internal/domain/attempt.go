@@ -45,7 +45,7 @@ func (a *Attempt) validateForAppend() error {
 }
 
 func truncateRunes(s string, maxRunes int) string {
-	if utf8.RuneCountInString(s) <= maxRunes {
+	if len(s) <= maxRunes || utf8.RuneCountInString(s) <= maxRunes {
 		return s
 	}
 

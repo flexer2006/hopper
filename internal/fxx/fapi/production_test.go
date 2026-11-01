@@ -75,6 +75,19 @@ func checkNames(checks []httpapi.Checker) map[string]httpapi.Checker {
 	return byName
 }
 
+func assertAMQPCheckerUnavailable(t *testing.T, c httpapi.Checker) {
+	t.Helper()
+
+	err := c.Check(t.Context())
+	if !errors.Is(err, broker.ErrUnavailable) {
+		t.Fatalf("Check() err = %v, want ErrUnavailable", err)
+	}
+
+	if errors.Is(err, broker.ErrNoConfirm) {
+		t.Fatal("health must not reuse ErrNoConfirm for a missing connection")
+	}
+}
+
 func TestMongoOptionsLeaseIsNotScanInterval(t *testing.T) {
 	t.Parallel()
 
@@ -175,45 +188,6 @@ func TestProductionFailsFastOnStandaloneMongo(t *testing.T) {
 	}
 }
 
-func TestRequireInfrastructure(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		mongo string
-		amqp  string
-		want  error
-	}{
-		{name: "missing", want: platform.ErrConfig},
-		{name: "standalone", mongo: standaloneMongoURI, amqp: validAMQPURI, want: persist.ErrStandalone},
-		{name: "bad amqp", mongo: replicaMongoURI, amqp: "http://rabbitmq/", want: broker.ErrURI},
-		{name: "ok", mongo: replicaMongoURI, amqp: validAMQPURI},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			cfg := new(platform.Config)
-			cfg.MongoURI = tc.mongo
-			cfg.AMQPURI = tc.amqp
-
-			err := requireInfrastructure(cfg)
-			if tc.want == nil {
-				if err != nil {
-					t.Fatalf("requireInfrastructure() err = %v", err)
-				}
-
-				return
-			}
-
-			if !errors.Is(err, tc.want) {
-				t.Fatalf("requireInfrastructure() err = %v, want %v", err, tc.want)
-			}
-		})
-	}
-}
-
 func TestAMQPCheckerReportsUnavailable(t *testing.T) {
 	t.Parallel()
 
@@ -235,16 +209,7 @@ func TestAMQPCheckerReportsUnavailable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			checker := &amqpChecker{resources: tc.res}
-
-			err := checker.Check(t.Context())
-			if !errors.Is(err, broker.ErrUnavailable) {
-				t.Fatalf("Check() err = %v, want ErrUnavailable", err)
-			}
-
-			if errors.Is(err, broker.ErrNoConfirm) {
-				t.Fatal("health must not reuse ErrNoConfirm for a missing connection")
-			}
+			assertAMQPCheckerUnavailable(t, amqpHealth(tc.res))
 		})
 	}
 
@@ -350,4 +315,48 @@ func TestProductionSourceNeverConsumes(t *testing.T) {
 
 		return true
 	})
+}
+
+func TestOpenBrokerFillsRuntimeDefaultsAndGuardsNilConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := new(platform.Config)
+
+	app := fx.New(
+		fx.NopLogger,
+		fx.Supply(cfg),
+		fx.Provide(openBroker),
+		fx.Invoke(func(*brokerResources) {}),
+	)
+	if err := app.Err(); err != nil {
+		t.Fatalf("fx.New(openBroker) err = %v", err)
+	}
+
+	if cfg.PublishConfirmTimeout != platform.DefaultPublishConfirmTimeout {
+		t.Fatalf(
+			"PublishConfirmTimeout = %s, want %s",
+			cfg.PublishConfirmTimeout,
+			platform.DefaultPublishConfirmTimeout,
+		)
+	}
+
+	nilApp := fx.New(
+		fx.NopLogger,
+		fx.Provide(func(lc fx.Lifecycle) *brokerResources {
+			return openBroker(lc, nil)
+		}),
+		fx.Invoke(func(*brokerResources) {}),
+	)
+
+	err := nilApp.Start(t.Context())
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("openBroker(nil).Start err = %v, want ErrConfig", err)
+	}
+
+	srv := newHTTPServer(t.Context(), loopbackAddr, nil)
+	if srv.BaseContext == nil || srv.BaseContext(nil) != t.Context() {
+		t.Fatal("newHTTPServer BaseContext did not preserve baseCtx")
+	}
+
+	startHTTP(httpIn{})
 }

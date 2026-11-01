@@ -207,6 +207,35 @@ func claimDead(t *testing.T, fx apiFixture, id string) {
 	}
 }
 
+func createJob(t *testing.T, fx apiFixture, key, payload string) string {
+	t.Helper()
+
+	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), key, payload)
+	defer closeBody(t, created)
+
+	if created.StatusCode != http.StatusAccepted {
+		t.Fatalf("create status = %d", created.StatusCode)
+	}
+
+	var body idBody
+
+	err := json.NewDecoder(created.Body).Decode(&body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return body.ID
+}
+
+func createAndClaimDead(t *testing.T, fx apiFixture, key, payload string) string {
+	t.Helper()
+
+	id := createJob(t, fx, key, payload)
+	claimDead(t, fx, id)
+
+	return id
+}
+
 func decodeErr(t *testing.T, res *http.Response) errBody {
 	t.Helper()
 
@@ -471,6 +500,42 @@ func TestCreateJobUnknownField(t *testing.T) {
 	}
 }
 
+func TestCreateJobDuplicateMemberAndInvalidUTF8Rejected(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "duplicate top-level member",
+			body: `{"type":"http_post","type":"http_post","target":"https://example.invalid/webhook","payload":{"n":1}}`,
+		},
+		{
+			name: "duplicate nested payload member",
+			body: `{"type":"http_post","target":"https://example.invalid/webhook","payload":{"n":1,"n":2}}`,
+		},
+		{
+			name: "invalid utf8 in json string",
+			body: "{\"type\":\"http_post\",\"target\":\"https://example.invalid/webhook\",\"payload\":{\"s\":\"\xff\"}}",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			res := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, tc.body)
+			got := decodeErr(t, res)
+			if res.StatusCode != http.StatusBadRequest || got.Code != "validation_failed" {
+				t.Fatalf("%s: status=%d body=%+v", tc.name, res.StatusCode, got)
+			}
+		})
+	}
+}
+
 func TestCreateJobTooLarge(t *testing.T) {
 	t.Parallel()
 
@@ -503,17 +568,9 @@ func TestGetAndListDead(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+	id := createJob(t, fx, idemKey, createJSON)
 
-	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
-	var body idBody
-
-	err := json.NewDecoder(created.Body).Decode(&body)
-	closeBody(t, created)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	got := doReq(t, fx.h, http.MethodGet, "/v1/jobs/"+body.ID, platform.ValidToken(), "", "")
+	got := doReq(t, fx.h, http.MethodGet, "/v1/jobs/"+id, platform.ValidToken(), "", "")
 	defer closeBody(t, got)
 
 	if got.StatusCode != http.StatusOK {
@@ -543,7 +600,7 @@ func TestGetAndListDead(t *testing.T) {
 		t.Fatalf("list status = %d", list.StatusCode)
 	}
 
-	claimDead(t, fx, body.ID)
+	claimDead(t, fx, id)
 
 	deadList := doReq(t, fx.h, http.MethodGet, "/v1/jobs?status=dead", platform.ValidToken(), "", "")
 	defer closeBody(t, deadList)
@@ -553,7 +610,7 @@ func TestGetAndListDead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if deadList.StatusCode != http.StatusOK || !bytes.Contains(rawList, []byte(body.ID)) {
+	if deadList.StatusCode != http.StatusOK || !bytes.Contains(rawList, []byte(id)) {
 		t.Fatalf("dead list status=%d body=%s", deadList.StatusCode, rawList)
 	}
 
@@ -584,25 +641,17 @@ func TestReplayDeadAndConflict(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+	id := createJob(t, fx, idemKey, createJSON)
 
-	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
-	var body idBody
-
-	err := json.NewDecoder(created.Body).Decode(&body)
-	closeBody(t, created)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	queued := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+body.ID+"/replay", platform.ValidToken(), "", "")
+	queued := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+id+"/replay", platform.ValidToken(), "", "")
 	got := decodeErr(t, queued)
 	if queued.StatusCode != http.StatusConflict || got.Code != "conflict" {
 		t.Fatalf("replay queued status=%d body=%+v", queued.StatusCode, got)
 	}
 
-	claimDead(t, fx, body.ID)
+	claimDead(t, fx, id)
 
-	replayed := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+body.ID+"/replay", platform.ValidToken(), "", "")
+	replayed := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+id+"/replay", platform.ValidToken(), "", "")
 	defer closeBody(t, replayed)
 
 	if replayed.StatusCode != http.StatusAccepted {
@@ -654,23 +703,13 @@ func TestReplayConfirmFail503(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
-
-	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
-	var body idBody
-
-	err := json.NewDecoder(created.Body).Decode(&body)
-	closeBody(t, created)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	claimDead(t, fx, body.ID)
+	id := createAndClaimDead(t, fx, idemKey, createJSON)
 
 	fx.pub.err = errors.New("nack")
 
-	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+body.ID+"/replay", platform.ValidToken(), "", "")
+	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+id+"/replay", platform.ValidToken(), "", "")
 	got := decodeErr(t, res)
-	if res.StatusCode != http.StatusServiceUnavailable || got.Code != "service_unavailable" || got.ID != body.ID {
+	if res.StatusCode != http.StatusServiceUnavailable || got.Code != "service_unavailable" || got.ID != id {
 		t.Fatalf("replay confirm fail status=%d body=%+v", res.StatusCode, got)
 	}
 }
@@ -679,38 +718,18 @@ func TestReplayCapConflict409(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
-
-	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
-	var body idBody
-
-	err := json.NewDecoder(created.Body).Decode(&body)
-	closeBody(t, created)
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := createAndClaimDead(t, fx, idemKey, createJSON)
 
 	for range domain.ReplayCap {
-		claimDead(t, fx, body.ID)
-
-		_, replayErr := fx.st.Replay(t.Context(), replay.Request{ID: body.ID, By: "ops"})
+		_, replayErr := fx.st.Replay(t.Context(), replay.Request{ID: id, By: "ops"})
 		if replayErr != nil {
 			t.Fatalf("Replay() err = %v", replayErr)
 		}
+
+		claimDead(t, fx, id)
 	}
 
-	out := claimJob(t, fx, body.ID)
-	err = fx.st.CommitOutcome(t.Context(), deliver.OutcomeIn{
-		ID:           body.ID,
-		FenceToken:   out.FenceToken,
-		Status:       domain.StatusDead,
-		AttemptsDone: 1,
-		Cycle:        domain.ReplayCap,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+body.ID+"/replay", platform.ValidToken(), "", "")
+	res := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+id+"/replay", platform.ValidToken(), "", "")
 	got := decodeErr(t, res)
 	if res.StatusCode != http.StatusConflict || got.Code != "conflict" {
 		t.Fatalf("replay cap status=%d body=%+v (AT-UC05-03)", res.StatusCode, got)
@@ -721,25 +740,15 @@ func TestGetJobIncludesReplayHistory(t *testing.T) {
 	t.Parallel()
 
 	fx := newFixture(t)
+	id := createAndClaimDead(t, fx, idemKey, createJSON)
 
-	created := doReq(t, fx.h, http.MethodPost, "/v1/jobs", platform.ValidToken(), idemKey, createJSON)
-	var body idBody
-
-	err := json.NewDecoder(created.Body).Decode(&body)
-	closeBody(t, created)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	claimDead(t, fx, body.ID)
-
-	replayed := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+body.ID+"/replay", platform.ValidToken(), "", "")
+	replayed := doReq(t, fx.h, http.MethodPost, "/v1/jobs/"+id+"/replay", platform.ValidToken(), "", "")
 	closeBody(t, replayed)
 	if replayed.StatusCode != http.StatusAccepted {
 		t.Fatalf("replay status = %d", replayed.StatusCode)
 	}
 
-	got := doReq(t, fx.h, http.MethodGet, "/v1/jobs/"+body.ID, platform.ValidToken(), "", "")
+	got := doReq(t, fx.h, http.MethodGet, "/v1/jobs/"+id, platform.ValidToken(), "", "")
 	defer closeBody(t, got)
 
 	raw, err := io.ReadAll(got.Body)
@@ -984,6 +993,87 @@ func TestBearerSchemeCaseInsensitive(t *testing.T) {
 
 	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("status = %d", res.StatusCode)
+	}
+}
+
+func TestXFFMultipleHeaderLinesCoalescedWhenTrusted(t *testing.T) {
+	t.Parallel()
+
+	clk := new(frozenClock{ts: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)})
+	h := httpapi.New(httpapi.Options{
+		Now:            clk.now,
+		Token:          platform.ValidToken(),
+		RateLimitRPM:   1,
+		RateLimitBurst: 1,
+		TrustXFFHops:   1,
+	})
+
+	req1 := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/jobs", strings.NewReader(createJSON))
+	req1.Header.Add("X-Forwarded-For", "203.0.113.10")
+	req1.Header.Add("X-Forwarded-For", "198.51.100.42")
+	rec1 := httptest.NewRecorder()
+	h.ServeHTTP(rec1, req1)
+	res1 := rec1.Result()
+	got1 := decodeErr(t, res1)
+	if res1.StatusCode != http.StatusUnauthorized || got1.Code != "unauthorized" {
+		t.Fatalf("first status=%d body=%+v", res1.StatusCode, got1)
+	}
+
+	req2 := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/jobs", strings.NewReader(createJSON))
+	req2.Header.Add("X-Forwarded-For", "")
+	req2.Header.Add("X-Forwarded-For", "203.0.113.99, 198.51.100.42")
+	req2.Header.Add("X-Forwarded-For", "   ")
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	res2 := rec2.Result()
+	got2 := decodeErr(t, res2)
+	if res2.StatusCode != http.StatusTooManyRequests || got2.Code != "rate_limited" {
+		t.Fatalf(
+			"multi-header xff spoof with empty lines bypassed rate limit: status=%d body=%+v",
+			res2.StatusCode,
+			got2,
+		)
+	}
+
+	req3 := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/jobs", strings.NewReader(createJSON))
+	req3.RemoteAddr = "198.51.100.42:54321"
+	req3.Header.Set("X-Forwarded-For", "203.0.113.77, malformed-hop")
+	rec3 := httptest.NewRecorder()
+	h.ServeHTTP(rec3, req3)
+	res3 := rec3.Result()
+	got3 := decodeErr(t, res3)
+	if res3.StatusCode != http.StatusTooManyRequests || got3.Code != "rate_limited" {
+		t.Fatalf("malformed xff hop did not fall back to RemoteAddr: status=%d body=%+v", res3.StatusCode, got3)
+	}
+}
+
+func TestDuplicateAuthAndIdempotencyHeadersRejected(t *testing.T) {
+	t.Parallel()
+
+	fx := newFixture(t)
+
+	dupAuth := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/jobs", strings.NewReader(createJSON))
+	dupAuth.Header.Add("Authorization", "Bearer "+platform.ValidToken())
+	dupAuth.Header.Add("Authorization", "Bearer "+platform.ValidToken())
+	dupAuth.Header.Set("Idempotency-Key", idemKey)
+	recAuth := httptest.NewRecorder()
+	fx.h.ServeHTTP(recAuth, dupAuth)
+	resAuth := recAuth.Result()
+	gotAuth := decodeErr(t, resAuth)
+	if resAuth.StatusCode != http.StatusUnauthorized || gotAuth.Code != "unauthorized" {
+		t.Fatalf("duplicate Authorization status=%d body=%+v", resAuth.StatusCode, gotAuth)
+	}
+
+	dupKey := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/jobs", strings.NewReader(createJSON))
+	dupKey.Header.Set("Authorization", "Bearer "+platform.ValidToken())
+	dupKey.Header.Add("Idempotency-Key", "key-1")
+	dupKey.Header.Add("Idempotency-Key", "key-2")
+	recKey := httptest.NewRecorder()
+	fx.h.ServeHTTP(recKey, dupKey)
+	resKey := recKey.Result()
+	gotKey := decodeErr(t, resKey)
+	if resKey.StatusCode != http.StatusBadRequest || gotKey.Code != "validation_failed" {
+		t.Fatalf("duplicate Idempotency-Key status=%d body=%+v", resKey.StatusCode, gotKey)
 	}
 }
 

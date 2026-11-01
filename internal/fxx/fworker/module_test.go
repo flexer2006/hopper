@@ -203,3 +203,35 @@ func TestNewAppRelayLifecycle(t *testing.T) { //nolint:paralleltest // t.Setenv 
 		t.Fatal(err)
 	}
 }
+
+func TestNewAppStartStopCycles(t *testing.T) { //nolint:paralleltest // t.Setenv is process-wide
+	bindWorker(t)
+
+	st := frozenMemory()
+
+	app := fworker.NewApp(
+		fx.NopLogger,
+		fx.Provide(func() dispatch.Jobs { return st }),
+		fx.Provide(func() deliver.Jobs { return st }),
+		fx.Provide(func() dispatch.Publisher { return nopPublisher{} }),
+		fx.Provide(func() worker.Source { return blockSource{} }),
+	)
+
+	err := platform.StartStopCycles(t.Context(), app, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if platform.GoroutineCount() == 0 {
+		t.Fatal("GoroutineCount() = 0, want > 0")
+	}
+
+	rep, err := platform.DetectLeakedGoroutines()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rep.Count != 0 {
+		t.Fatalf("leaked goroutines = %d:\n%s", rep.Count, rep.Profile)
+	}
+}

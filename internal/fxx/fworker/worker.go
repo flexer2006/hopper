@@ -137,7 +137,10 @@ func startWorker(in workerLife) error { //nolint:gocritic // hugeParam: fx.In co
 		},
 		OnStop: func(ctx context.Context) error {
 			if stop != nil {
-				stop()
+				stopFn := stop
+				stop = nil
+
+				stopFn()
 			}
 
 			return waitDone(ctx, &wg)

@@ -136,12 +136,17 @@ func (s *Service) confirm(ctx context.Context, id string, generation int, queue,
 }
 
 func randomID() (string, error) {
-	buf := make([]byte, idBytes)
+	var (
+		buf    [idBytes]byte
+		hexBuf [idBytes * 2]byte
+	)
 
-	_, err := rand.Read(buf)
+	_, err := rand.Read(buf[:])
 	if err != nil {
 		return "", fmt.Errorf("%w: id: %w", ErrInvalid, err)
 	}
 
-	return hex.EncodeToString(buf), nil
+	hex.Encode(hexBuf[:], buf[:])
+
+	return string(hexBuf[:]), nil
 }

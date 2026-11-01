@@ -127,6 +127,7 @@ deps:
     canUse:
       - config
       - zap
+      - xsys
 
   enqueue:
     mayDependOn:
@@ -212,6 +213,8 @@ deps:
   fboot:
     mayDependOn:
       - platform
+      - persist
+      - broker
     canUse:
       - fx
 

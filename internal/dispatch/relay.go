@@ -96,7 +96,10 @@ func (r *Relay) BindStart() StartStop {
 		},
 		Stop: func(ctx context.Context) error {
 			if stop != nil {
-				return stop(ctx)
+				stopFn := stop
+				stop = nil
+
+				return stopFn(ctx)
 			}
 
 			return nil

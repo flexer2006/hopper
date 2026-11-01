@@ -16,17 +16,17 @@ type relayHolder struct{ relay *dispatch.Relay }
 type relayIn struct {
 	fx.In
 
-	Log       *zap.Logger
-	Cfg       *platform.Config
 	Jobs      dispatch.Jobs      `optional:"true"`
 	Publisher dispatch.Publisher `optional:"true"`
+	Log       *zap.Logger
+	Cfg       *platform.Config
 }
 
 type enqueueIn struct {
 	fx.In
 
-	Holder *relayHolder
 	Store  enqueue.Store `optional:"true"`
+	Holder *relayHolder
 }
 
 type queryIn struct {
@@ -38,8 +38,8 @@ type queryIn struct {
 type replayIn struct {
 	fx.In
 
-	Holder *relayHolder
 	Store  replay.Store `optional:"true"`
+	Holder *relayHolder
 }
 
 type relayLife struct {

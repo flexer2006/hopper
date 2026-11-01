@@ -6,12 +6,13 @@ x-hopper-common: &hopper-common
   user: "65532:65532"
   read_only: true
   tmpfs:
-    - /tmp
+    - /tmp:rw,noexec,nosuid,nodev,size=16m
   security_opt:
     - no-new-privileges:true
   cap_drop:
     - ALL
   pids_limit: 256
+  stop_signal: SIGTERM
   logging:
     driver: json-file
     options:
@@ -45,6 +46,9 @@ services:
     networks:
       - backend
     mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 512
+    stop_grace_period: 30s
     healthcheck:
       test:
         [
@@ -72,6 +76,9 @@ services:
     networks:
       - backend
     mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 512
+    stop_grace_period: 30s
     healthcheck:
       test:
         [
@@ -92,7 +99,7 @@ services:
       context: ..
       dockerfile: deploy/go.Dockerfile
       args:
-        GO_VERSION: "1.27.1"
+        GO_VERSION: "1.27.3"
     command: ["api"]
     mem_limit: 128m
     memswap_limit: 128m
@@ -129,14 +136,22 @@ services:
     networks:
       - edge
     mem_limit: 64m
+    memswap_limit: 64m
     pids_limit: 128
+    stop_grace_period: 10s
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 $(cat /tmp/nginx.pid) && nc -z 127.0.0.1 8080"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     ports:
       - "127.0.0.1:8080:8080"
     cap_drop:
       - ALL
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
 
 networks:
   edge:

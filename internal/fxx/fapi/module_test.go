@@ -94,3 +94,35 @@ func TestNewAppRelayLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNewAppStartStopCycles(t *testing.T) {
+	bindAPI(t)
+	t.Setenv(platform.HTTPAddrEnv, "127.0.0.1:0")
+
+	st := persist.NewMemory(func() time.Time {
+		return time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	}, 30*time.Second)
+
+	app := fapi.NewApp(
+		fx.NopLogger,
+		fx.Provide(func() dispatch.Jobs { return st }),
+		fx.Provide(func() dispatch.Publisher { return nopPublisher{} }),
+		fx.Provide(func() enqueue.Store { return st }),
+		fx.Provide(func() query.Store { return st }),
+		fx.Provide(func() replay.Store { return st }),
+	)
+
+	err := platform.StartStopCycles(t.Context(), app, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := platform.DetectLeakedGoroutines()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rep.Count != 0 {
+		t.Fatalf("leaked goroutines = %d:\n%s", rep.Count, rep.Profile)
+	}
+}

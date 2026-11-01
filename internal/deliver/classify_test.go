@@ -6,9 +6,15 @@ import (
 	"net/http"
 	"testing"
 
+	"go.uber.org/goleak"
+
 	"github.com/flexer2006/hopper/internal/deliver"
 	"github.com/flexer2006/hopper/internal/domain"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestClassifyPostSuccessAndTerminal(t *testing.T) {
 	t.Parallel()

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
 	"fmt"
 )
@@ -37,7 +38,14 @@ func MarshalEnqueue(jobID string) ([]byte, error) {
 func ParseEnqueue(body []byte) (string, error) {
 	var msg EnqueueMessage
 
-	err := jsonv2.Unmarshal(body, &msg, json.DefaultOptionsV1(), jsonv2.RejectUnknownMembers(true))
+	err := jsonv2.Unmarshal(
+		body,
+		&msg,
+		json.DefaultOptionsV1(),
+		jsonv2.RejectUnknownMembers(true),
+		jsontext.AllowDuplicateNames(false),
+		jsontext.AllowInvalidUTF8(false),
+	)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrInvalidEnqueue, err)
 	}
@@ -97,12 +105,15 @@ func MarshalGhostDLQ(jobID string) ([]byte, error) {
 
 func MarshalMalformedDLQ(raw []byte) ([]byte, error) {
 	sum := sha256.Sum256(raw)
-
 	size := len(raw)
+
+	var hexBuf [sha256.Size * 2]byte
+
+	hex.Encode(hexBuf[:], sum[:])
 
 	body, err := json.Marshal(DLQMessage{
 		At:         "",
-		BodySHA256: hex.EncodeToString(sum[:]),
+		BodySHA256: string(hexBuf[:]),
 		JobID:      "",
 		Reason:     reasonMalformed,
 		BodySize:   &size,
@@ -118,7 +129,14 @@ func MarshalMalformedDLQ(raw []byte) ([]byte, error) {
 func ParseDLQ(body []byte) (DLQMessage, error) {
 	var msg DLQMessage
 
-	err := jsonv2.Unmarshal(body, &msg, json.DefaultOptionsV1(), jsonv2.RejectUnknownMembers(true))
+	err := jsonv2.Unmarshal(
+		body,
+		&msg,
+		json.DefaultOptionsV1(),
+		jsonv2.RejectUnknownMembers(true),
+		jsontext.AllowDuplicateNames(false),
+		jsontext.AllowInvalidUTF8(false),
+	)
 	if err != nil {
 		return DLQMessage{}, fmt.Errorf("%w: %w", ErrInvalidDLQ, err)
 	}

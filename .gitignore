@@ -10,3 +10,4 @@ coverage.*
 *.test
 *.out
 *.log
+.cache

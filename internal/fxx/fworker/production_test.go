@@ -94,6 +94,19 @@ func checkNames(checks []httpapi.Checker) map[string]httpapi.Checker {
 	return byName
 }
 
+func assertAMQPCheckerUnavailable(t *testing.T, c httpapi.Checker) {
+	t.Helper()
+
+	err := c.Check(t.Context())
+	if !errors.Is(err, broker.ErrUnavailable) {
+		t.Fatalf("Check() err = %v, want ErrUnavailable", err)
+	}
+
+	if errors.Is(err, broker.ErrNoConfirm) {
+		t.Fatal("health must not reuse ErrNoConfirm for a missing connection")
+	}
+}
+
 func TestMongoOptionsLeaseMatchesClaimLease(t *testing.T) {
 	t.Parallel()
 
@@ -197,45 +210,6 @@ func TestProductionFailsFastOnStandaloneMongo(t *testing.T) {
 	}
 }
 
-func TestRequireInfrastructure(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		mongo string
-		amqp  string
-		want  error
-	}{
-		{name: "missing", want: platform.ErrConfig},
-		{name: "standalone", mongo: standaloneMongoURI, amqp: validAMQPURI, want: persist.ErrStandalone},
-		{name: "bad amqp", mongo: replicaMongoURI, amqp: "http://rabbitmq/", want: broker.ErrURI},
-		{name: "ok", mongo: replicaMongoURI, amqp: validAMQPURI},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			cfg := new(platform.Config)
-			cfg.MongoURI = tc.mongo
-			cfg.AMQPURI = tc.amqp
-
-			err := requireInfrastructure(cfg)
-			if tc.want == nil {
-				if err != nil {
-					t.Fatalf("requireInfrastructure() err = %v", err)
-				}
-
-				return
-			}
-
-			if !errors.Is(err, tc.want) {
-				t.Fatalf("requireInfrastructure() err = %v, want %v", err, tc.want)
-			}
-		})
-	}
-}
-
 func TestAMQPCheckerRequiresConsumerLiveness(t *testing.T) {
 	t.Parallel()
 
@@ -263,16 +237,7 @@ func TestAMQPCheckerRequiresConsumerLiveness(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			checker := &amqpChecker{resources: tc.res}
-
-			err := checker.Check(t.Context())
-			if !errors.Is(err, broker.ErrUnavailable) {
-				t.Fatalf("Check() err = %v, want ErrUnavailable", err)
-			}
-
-			if errors.Is(err, broker.ErrNoConfirm) {
-				t.Fatal("health must not reuse ErrNoConfirm for a missing connection")
-			}
+			assertAMQPCheckerUnavailable(t, amqpHealth(tc.res))
 		})
 	}
 
@@ -484,5 +449,38 @@ func TestUnexpectedSourceErrorShutsDownProcess(t *testing.T) {
 	case <-seen:
 	case <-wait.Done():
 		t.Fatal("Shutdowner.Shutdown was not called after the consume source closed")
+	}
+}
+
+func TestOpenBrokerFillsRuntimeDefaultsAndGuardsNilConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := new(platform.Config)
+
+	app := fx.New(
+		fx.NopLogger,
+		fx.Supply(cfg),
+		fx.Provide(openBroker),
+		fx.Invoke(func(*workerResources) {}),
+	)
+	if err := app.Err(); err != nil {
+		t.Fatalf("fx.New(openBroker) err = %v", err)
+	}
+
+	if cfg.PublishConfirmTimeout != platform.DefaultPublishConfirmTimeout || cfg.QueueJobs == "" {
+		t.Fatalf("openBroker runtime defaults not populated: %+v", cfg)
+	}
+
+	nilApp := fx.New(
+		fx.NopLogger,
+		fx.Provide(func(lc fx.Lifecycle) *workerResources {
+			return openBroker(lc, nil)
+		}),
+		fx.Invoke(func(*workerResources) {}),
+	)
+
+	err := nilApp.Start(t.Context())
+	if !errors.Is(err, platform.ErrConfig) {
+		t.Fatalf("openBroker(nil).Start err = %v, want ErrConfig", err)
 	}
 }

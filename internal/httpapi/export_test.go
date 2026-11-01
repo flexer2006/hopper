@@ -39,6 +39,8 @@ func LimiterIdleEvicts(now func() time.Time, advance func(time.Duration)) int {
 
 func JSONTooDeep(raw []byte, maxDepth int) bool { return jsonTooDeep(raw, maxDepth) }
 
+func XFFHeader(header http.Header) string { return xffHeader(header) }
+
 func XFFHop(header string, hops int) string { return xffHop(header, hops) }
 
 func RecovererForTest() http.Handler { return RecovererWithLog(nil) }

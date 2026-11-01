@@ -3,7 +3,10 @@ package persist
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"time"
+	"unicode/utf8"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
@@ -77,13 +80,20 @@ func payloadRaw(data []byte) (bson.Raw, error) {
 		return nil, ErrTooLarge
 	}
 
-	if !json.Valid(data) || !bytes.HasPrefix(bytes.TrimSpace(data), []byte("{")) {
+	trim := bytes.TrimSpace(data)
+	if len(trim) == 0 || trim[0] != '{' || !utf8.Valid(trim) {
 		return nil, ErrPayload
 	}
 
 	var val any
 
-	err := json.Unmarshal(data, &val)
+	err := jsonv2.Unmarshal(
+		trim,
+		&val,
+		json.DefaultOptionsV1(),
+		jsontext.AllowDuplicateNames(false),
+		jsontext.AllowInvalidUTF8(false),
+	)
 	if err != nil {
 		return nil, ErrPayload
 	}

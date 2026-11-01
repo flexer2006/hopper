@@ -64,12 +64,64 @@ func TestXFFHopFromRight(t *testing.T) {
 		t.Fatalf("hops=2 got %q", got)
 	}
 
+	got = httpapi.XFFHop(" , 198.51.100.7, , 10.0.0.1 , ", 2)
+	if got != "198.51.100.7" {
+		t.Fatalf("empty segments hops=2 got %q, want 198.51.100.7", got)
+	}
+
+	got = httpapi.XFFHop("2001:DB8:0:0::1", 1)
+	if got != "2001:db8::1" {
+		t.Fatalf("ipv6 canonical hop got %q, want 2001:db8::1", got)
+	}
+
+	if httpapi.XFFHop("2001:0db8::0001", 1) != got {
+		t.Fatal("ipv6 variants did not canonicalize to identical key")
+	}
+
+	if httpapi.XFFHop("::ffff:198.51.100.7", 1) != "198.51.100.7" {
+		t.Fatal("ipv4-mapped ipv6 hop did not unmap to ipv4")
+	}
+
+	if httpapi.XFFHop("198.51.100.7, not-an-ip", 1) != "" || httpapi.XFFHop("2001:db8::1%eth0", 1) != "" {
+		t.Fatal("malformed or zoned hop should fall back to empty string")
+	}
+
 	if httpapi.XFFHop("1.1.1.1", 3) != "" {
 		t.Fatal("over-long hops should fall back")
 	}
 
 	if httpapi.XFFHop("", 1) != "" {
 		t.Fatal("empty header")
+	}
+}
+
+func TestXFFHeader(t *testing.T) {
+	t.Parallel()
+
+	if got := httpapi.XFFHeader(http.Header{}); got != "" {
+		t.Fatalf("empty header map got %q", got)
+	}
+
+	singleBlank := http.Header{}
+	singleBlank.Add("X-Forwarded-For", "   ")
+	if got := httpapi.XFFHeader(singleBlank); got != "" {
+		t.Fatalf("single whitespace line got %q", got)
+	}
+
+	multi := http.Header{}
+	multi.Add("X-Forwarded-For", "")
+	multi.Add("X-Forwarded-For", " 203.0.113.10 ")
+	multi.Add("X-Forwarded-For", "  \t ")
+	multi.Add("X-Forwarded-For", "198.51.100.42")
+	if got := httpapi.XFFHeader(multi); got != "203.0.113.10, 198.51.100.42" {
+		t.Fatalf("multi header coalescing got %q", got)
+	}
+
+	allBlank := http.Header{}
+	allBlank.Add("X-Forwarded-For", "")
+	allBlank.Add("X-Forwarded-For", "   ")
+	if got := httpapi.XFFHeader(allBlank); got != "" {
+		t.Fatalf("all-blank multi header got %q", got)
 	}
 }
 
